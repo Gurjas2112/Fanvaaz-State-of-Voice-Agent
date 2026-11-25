@@ -19,6 +19,7 @@
 | --- | --- |
 | Collection | YouTube Data API v3 (httpx, retries, quota accounting, raw responses saved for replay) |
 | NLP | Rule-based brand matcher (aliases, Hindi script); brand-targeted sentiment for English + Hinglish with comparatives, negation and contrast; optional LLM relabelling (any OpenAI-compatible model) |
+| Risk radar | Safety, legal/consumer, product and service-failure flags per brand, scored by weight and likes, with evidence; CSV export for Tableau / Power BI (adapted from our CRIF hackathon project) |
 | Safety | PII redaction at ingestion; prompt-injection quarantine for comments; question guardrails; numeric grounding check on every LLM output |
 | Serving | FastAPI (OpenAPI), SQLite, responsive dashboard, Docker |
 | Quality | pytest + Hypothesis, golden sets, DeepEval, Ragas, promptfoo, Postman/Newman, Schemathesis, Playwright, Appium, k6, GitHub Actions |
@@ -40,25 +41,27 @@
 
 > **TEMPLATE ONLY: the numbers below come from the synthetic demo dataset, not YouTube.** Run `atompulse run --source youtube` and re-run this script before submitting.
 
-Run `20261125T075013-8c9114` · 300 result slots · 5661 comments · source: synthetic-demo
+Run `20261125T080758-010355` · 300 result slots · 5640 comments · source: synthetic-demo
 
 | Keyword | Atomberg SoV | Rank | Leader (SoV) | Atomberg positive share |
 | --- | --- | --- | --- | --- |
-| BLDC fan | 33.9% | 1 of 10 | Atomberg (33.9%) | 42.3% |
-| All keywords | 29.5% | 1 of 10 | Atomberg (29.5%) | 34.3% |
-| best ceiling fan India | 24.2% | 1 of 10 | Atomberg (24.2%) | 24.5% |
-| ceiling fan with remote | 22.9% | 1 of 10 | Atomberg (22.9%) | 28.4% |
-| energy saving fan | 35.6% | 1 of 10 | Atomberg (35.6%) | 40.5% |
-| smart ceiling fan app | 29.4% | 1 of 10 | Atomberg (29.4%) | 33.4% |
-| smart fan | 31.2% | 1 of 10 | Atomberg (31.2%) | 36.7% |
+| BLDC fan | 35.6% | 1 of 10 | Atomberg (35.6%) | 42.0% |
+| All keywords | 28.7% | 1 of 10 | Atomberg (28.7%) | 32.0% |
+| best ceiling fan India | 24.2% | 1 of 10 | Atomberg (24.2%) | 24.3% |
+| ceiling fan with remote | 21.3% | 2 of 10 | Crompton (21.6%) | 25.2% |
+| energy saving fan | 34.8% | 1 of 10 | Atomberg (34.8%) | 38.5% |
+| smart ceiling fan app | 25.4% | 1 of 10 | Atomberg (25.4%) | 26.6% |
+| smart fan | 30.8% | 1 of 10 | Atomberg (30.8%) | 35.5% |
 
 **Insights and recommendations**
 
-1. **Overall Share of Voice.** Atomberg ranks #1 on overall Share of Voice at 29.5%; Havells is next at 17.9%.
-2. **Visibility vs advocacy.** Viewers speak well of Atomberg more often than they mention it: positive share 34.3% vs mention share 27.6%. Amplify existing happy-customer comments and reviews.
-3. **Strongest keyword.** Atomberg is strongest on "energy saving fan" with 35.6% Share of Voice.
-4. **Keyword to defend or win back.** "ceiling fan with remote" is Atomberg's weakest keyword: it still leads with 22.9%, but Crompton is close at 20.2%. Defend it with comparison videos and SEO-optimised titles.
-5. **Lead with what people praise.** "energy saving" drives the most praise: 147 of 595 positive Atomberg mentions. Make it the first claim in ads and creator briefs.
-6. **Top complaint theme.** "noise" is the top complaint: 52 of 268 negative Atomberg mentions. Action: lead creatives with silent-operation demos recorded on camera.
-7. **Channels already talking about you.** Top channels mentioning Atomberg in high-ranked results: Channel Papa, Channel Lima, Channel Bravo. Offer them early access to launches.
-8. **Top-10 videos that skip you.** 3 top-10 videos mention competitors but not Atomberg. Highest-view channels to approach: Channel Papa, Channel Foxtrot, Channel India.
+1. **Overall Share of Voice.** Atomberg ranks #1 on overall Share of Voice at 28.7%; Crompton is next at 17.8%.
+2. **Visibility vs advocacy.** Viewers speak well of Atomberg more often than they mention it: positive share 32.0% vs mention share 27.3%. Amplify existing happy-customer comments and reviews.
+3. **Strongest keyword.** Atomberg is strongest on "BLDC fan" with 35.6% Share of Voice.
+4. **Keyword to defend or win back.** On "ceiling fan with remote" Atomberg has only 21.3% Share of Voice while Crompton leads with 21.6%. Target this query with comparison videos and SEO-optimised titles.
+5. **Lead with what people praise.** "energy saving" drives the most praise: 137 of 564 positive Atomberg mentions. Make it the first claim in ads and creator briefs.
+6. **Top complaint theme.** "service" is the top complaint: 67 of 315 negative Atomberg mentions. Action: route these complaints to service ops and showcase installation turnaround.
+7. **Channels already talking about you.** Top channels mentioning Atomberg in high-ranked results: Channel November, Channel Foxtrot, Channel Alpha. Offer them early access to launches.
+8. **Top-10 videos that skip you.** 2 top-10 videos mention competitors but not Atomberg. Highest-view channels to approach: Channel Charlie, Channel Foxtrot.
+9. **Risk radar: escalate.** 137 Atomberg comments carry escalation risk (28 high severity). Most common: product failure (72). 24 mention a safety issue such as sparking or burning: route them to the quality team today and reply publicly within 24 hours.
+10. **Competitor weak spot.** Crompton has the most product-failure complaints among competitors (50). Reliability and warranty content can win those buyers.

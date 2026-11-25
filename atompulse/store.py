@@ -35,6 +35,10 @@ CREATE TABLE IF NOT EXISTS reports (
 CREATE TABLE IF NOT EXISTS insights (
   run_id TEXT PRIMARY KEY, body TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS risks (
+  run_id TEXT NOT NULL, brand TEXT NOT NULL, severity TEXT NOT NULL, score INTEGER NOT NULL, body TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_risks_run ON risks(run_id, brand, severity);
 """
 
 
@@ -62,6 +66,7 @@ class Store:
         mentions: list[Mention],
         reports: dict[str, KeywordReport],
         insights: list[dict],
+        risks: list[dict] | None = None,
     ) -> None:
         with self._lock, self._conn() as c:
             c.execute(
@@ -89,6 +94,13 @@ class Store:
                 [(info.run_id, k, r.model_dump_json()) for k, r in reports.items()],
             )
             c.execute("INSERT OR REPLACE INTO insights VALUES (?,?)", (info.run_id, json.dumps(insights)))
+            c.executemany(
+                "INSERT INTO risks VALUES (?,?,?,?,?)",
+                [
+                    (info.run_id, r["brand"], r["severity"], r["score"], json.dumps(r, ensure_ascii=False))
+                    for r in (risks or [])
+                ],
+            )
 
     def latest_run(self) -> RunInfo | None:
         with self._conn() as c:
@@ -135,3 +147,16 @@ class Store:
         with self._conn() as c:
             row = c.execute("SELECT body FROM insights WHERE run_id=?", (run_id,)).fetchone()
         return json.loads(row[0]) if row else []
+
+    def risks(
+        self, run_id: str, brand: str | None = None, severity: str | None = None, limit: int = 1000
+    ) -> list[dict]:
+        q, args = "SELECT body FROM risks WHERE run_id=?", [run_id]
+        if brand:
+            q, args = q + " AND brand=?", [*args, brand]
+        if severity:
+            q, args = q + " AND severity=?", [*args, severity]
+        q += " ORDER BY score DESC LIMIT ?"
+        with self._conn() as c:
+            rows = c.execute(q, (*args, limit)).fetchall()
+        return [json.loads(r[0]) for r in rows]

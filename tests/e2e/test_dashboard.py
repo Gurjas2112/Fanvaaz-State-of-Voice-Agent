@@ -106,3 +106,14 @@ def test_mobile_viewport_layout(browser, server_url):
     assert width <= 392, f"horizontal overflow on mobile: {width}px"
     expect(page.get_by_test_id("kpi-sov")).to_be_visible()
     ctx.close()
+
+
+def test_risk_radar_renders_and_switches_brand(page, server_url):
+    open_dashboard(page, server_url)
+    radar = page.get_by_test_id("risk-radar")
+    expect(radar.get_by_test_id("risk-total")).to_contain_text("flagged")
+    assert radar.get_by_test_id("risk-row").count() >= 1
+    first = radar.get_by_test_id("risk-row").first.inner_text()
+    page.get_by_test_id("risk-brand").select_option("Havells")
+    expect(radar.get_by_test_id("risk-row").first).not_to_have_text(first)
+    expect(page.get_by_test_id("export-risks")).to_have_attribute("href", "/api/v1/export/risks.csv")

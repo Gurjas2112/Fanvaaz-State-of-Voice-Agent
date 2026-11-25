@@ -102,6 +102,8 @@ def main() -> None:
         "| Collection | YouTube Data API v3 (httpx, retries, quota accounting, raw responses saved for replay) |",
         "| NLP | Rule-based brand matcher (aliases, Hindi script); brand-targeted sentiment for English + Hinglish "
         "with comparatives, negation and contrast; optional LLM relabelling (any OpenAI-compatible model) |",
+        "| Risk radar | Safety, legal/consumer, product and service-failure flags per brand, scored by weight and "
+        "likes, with evidence; CSV export for Tableau / Power BI (adapted from our CRIF hackathon project) |",
         "| Safety | PII redaction at ingestion; prompt-injection quarantine for comments; question guardrails; "
         "numeric grounding check on every LLM output |",
         "| Serving | FastAPI (OpenAPI), SQLite, responsive dashboard, Docker |",

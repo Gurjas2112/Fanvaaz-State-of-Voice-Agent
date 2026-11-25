@@ -7,6 +7,7 @@ import uuid
 from datetime import UTC, datetime
 
 from . import insights as insights_mod
+from . import risk as risk_mod
 from .collector import YouTubeCollector, load_demo
 from .config import DEFAULT_KEYWORDS, Settings, get_settings
 from .extract import extract_all
@@ -46,7 +47,8 @@ def run(
 
     mentions = extract_all(videos, llm=llm)
     reports = by_keyword(videos, mentions, s)
-    ins = insights_mod.build(reports, videos, mentions)
+    risks = risk_mod.flag_comments(videos, mentions)
+    ins = insights_mod.build(reports, videos, mentions, risks=risks)
     if llm is not None:
         ins = insights_mod.rewrite_with_llm(ins, llm)
 
@@ -59,7 +61,7 @@ def run(
         comments=sum(len(v.comments) for v in videos),
         quota_units_used=units,
     )
-    store.save_run(info, videos, mentions, reports, ins)
+    store.save_run(info, videos, mentions, reports, ins, risks)
     log.info(
         "run %s saved: %d videos, %d mentions, %d quota units", run_id, len(videos), len(mentions), units
     )

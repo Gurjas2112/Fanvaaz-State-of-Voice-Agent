@@ -48,6 +48,18 @@ tr.focus td { background: var(--accent-soft); font-weight: 600; }
 .answer { margin-top: 12px; line-height: 1.5; white-space: pre-wrap; }
 .answer.refused { color: var(--bad); }
 .sources { color: var(--muted); font-size: 13px; padding-left: 18px; }
+.risk-controls { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 14px; }
+.risk-controls label { font-weight: 600; }
+.risk-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.chip { border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.chip.high { color: var(--bad); border-color: #f1b0b0; }
+.chip.medium { color: #b35c00; border-color: #f3cf9f; }
+.sev.high { color: var(--bad); }
+.sev.medium { color: #b35c00; }
+table[data-testid="risk-table"] th:nth-child(n+3), table[data-testid="risk-table"] td:nth-child(n+3) { text-align: left; }
+.sev { font-weight: 600; text-transform: capitalize; }
+td.evidence { text-align: left; white-space: normal; min-width: 260px; }
+.exports { font-size: 13px; color: var(--muted); margin: 12px 0 0; }
 footer { text-align: center; color: var(--muted); font-size: 13px; padding: 20px; }
 @media (max-width: 640px) {
   .kpis { grid-template-columns: repeat(2, 1fr); }

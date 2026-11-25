@@ -58,7 +58,38 @@ YouTube Data API ─▶ Collector ─▶ Extractor ─────▶ SoV engine
 | Sentiment | Brand-targeted: "Atomberg is quieter than Crompton" → +/−; "switched from Usha to Atomberg"; negation before and after ("accha nahi"); contrast ("silent but overpriced"); choice questions are neutral; injection comments are never counted as praise. Optional LLM relabel, validated | `sentiment.py`, `extract.py` |
 | Score | Share of Voice (below) per keyword and overall | `sov.py` |
 | Explain | 8 insight/recommendation types, each carrying its evidence numbers. An LLM may reword them; a rewrite that states a number not in the evidence is rejected | `insights.py` |
+| Risk radar | Flags comments that need escalating (safety, legal/consumer, product failure, service failure), scored by category weight and likes, attributed to the right brand, with the evidence clause | `risk.py` |
 | Ask | BM25 retrieval over comments; injection-like comments quarantined; question guardrails (injection, PII, off-topic); answer grounding and PII redaction | `ask.py`, `guardrails.py` |
+| Export | Flat CSVs (SoV, risks, mentions) for Tableau, Power BI or Excel, with spreadsheet formula injection neutralised | `GET /api/v1/export/{table}.csv` |
+
+### Risk radar (adapted from our CRIF hackathon project)
+
+Share of Voice says how loud a brand is. A brand team also needs to know which comments need a response today: a
+sparking fan, a consumer-court threat, a dead motor. The radar adapts the reputation-risk scoring from our
+team's [CRIF India hackathon project](https://github.com/Gurjas2112/CRIF-Hackathon-2023) (COEP Mindspark 2023,
+1st prize), which scored news articles with weighted word lists and fed tagged CSVs to Tableau.
+
+| Category | Weight | Example terms |
+| --- | --- | --- |
+| safety | 50 (always high severity) | sparking, burning smell, shock, caught fire, jal gaya |
+| legal_consumer | 30 | consumer court, legal notice, fraud, refund |
+| product_failure | 20 | stopped working, motor burnt, defective, kharab |
+| service_failure | 15 | no response, technician never came, ticket closed |
+
+Score = sum of the comment's category weights (each once) + 10 if the brand mention is negative, then multiplied by
+`1 + log10(1 + likes) / 2`, because a liked complaint reaches more buyers. High at 60 or any safety flag, medium at 30.
+
+| CRIF approach | Problem for this use | AtomPulse |
+| --- | --- | --- |
+| Any token in a 4,472-word negative list adds +10 | "no noise" and "not bad" counted as negative | negation-aware terms; sentiment from the brand-targeted engine |
+| Whole article scored | every brand in it shares the blame | risk goes to the nearest brand in the clause ("Havells caught fire, switched to Atomberg" flags Havells) |
+| Generic categories (lawsuit, harassment, country) | not what a fan company escalates | fan-specific safety, consumer, product and service categories, Hinglish included |
+| Offensive-word list with slurs | not needed, and risky to ship | dropped |
+| Errors swallowed by bare `except` | silent data loss | typed failures, tested |
+| Transformer model reloaded per headline | slow | rules first; optional LLM only with validation |
+
+**Known limit**, kept visible as a strict `xfail` test: slang like "this fan is fire" (= great) still reads as a
+fire risk.
 
 ### The Share of Voice metric
 
@@ -82,16 +113,17 @@ keyword, ≈ 906 for six keywords against a 10,000-unit free daily quota, so the
 
 | Gate | Tool | Threshold | Measured (this repo, demo data) |
 | --- | --- | --- | --- |
-| Unit + collector (mocked YouTube) | pytest, httpx MockTransport | all pass | pass |
+| Unit + collector (mocked YouTube) + risk rules | pytest, httpx MockTransport | all pass | pass (123 tests in total incl. E2E; 1 documented xfail) |
 | Metamorphic properties | Hypothesis | 0 violations | comment order, brand-less comments, alias spelling, antisymmetric comparatives: all hold |
 | Brand detection | golden **holdout**, 50 comments / 59 brand pairs | F1 ≥ 0.95 | **F1 1.00** |
 | Brand-targeted sentiment, rules only | golden **holdout** | macro-F1 ≥ 0.80 | **macro-F1 0.84** (dev set: 0.99) |
 | Red-team refusal | own corpus, 40 attacks / 30 benign | ≥ 95% blocked, ≤ 5% false refusals | **40/40 blocked, 0/30 false refusals** |
 | LLM guard paths | fake LLMs that lie, leak PII, invent brands | must be rejected | all rejected |
 | promptfoo | behaviour + refusal on live `/ask` | all pass | **11/11** |
-| API contract | Postman + Newman | all pass | **28/28 assertions, 10 requests** |
-| API fuzzing | Schemathesis (OpenAPI) | 0 failures | **201/201** after fixing 2 findings (below) |
-| Web E2E | Playwright | all pass | **7/7**, incl. XSS and mobile layout |
+| API contract | Postman + Newman | all pass | **37/37 assertions, 12 requests** |
+| API fuzzing | Schemathesis (OpenAPI) | 0 failures | **388/388** after fixing 2 findings (below) |
+| Web E2E | Playwright | all pass | **8/8**, incl. XSS, mobile layout and risk radar |
+| CSV export safety | pytest | formulas neutralised | `=`, `+`, `-`, `@` cells prefixed with `'` |
 | Load | k6, 55 req/s for 60 s | p95 < 500 ms, < 1% errors | **3,302 requests, 0 errors, p95 6.2 ms (reads), 8.5 ms (ask)**, 1 worker, laptop-class box |
 | Faithfulness / hallucination | DeepEval, Ragas | faithfulness ≥ 0.8 | needs an LLM key: `make llm-evals` |
 | Android | Appium (UiAutomator2, Chrome) | all pass | runs in CI on an emulator: `mobile-appium` job |
@@ -110,6 +142,7 @@ one person; add real labelled comments from a live run before trusting decimals.
 - **Playwright** found the dashboard was 588 px wide on a 390 px phone (a grid item would not shrink). Fixed.
 - **A unit test** found "Which is better, Atomberg or Havells?" scored both brands positive. Choice questions are now neutral.
 - **The golden holdout** exposed over-fitting: dev 0.99 vs holdout 0.84.
+- **ruff** caught a regex f-string in the risk module that only parses on Python 3.12+, though the project supports 3.11.
 
 Reports land in `reports/` (golden, safety, promptfoo, k6, DeepEval, Ragas) and are uploaded as CI artifacts.
 
@@ -138,6 +171,8 @@ Reports land in `reports/` (golden, safety, promptfoo, k6, DeepEval, Ragas) and 
 | GET | `/api/v1/keywords` | `all` + each keyword in the latest run |
 | GET | `/api/v1/sov?keyword=` | brands sorted by SoV with M, E, P, net sentiment |
 | GET | `/api/v1/insights` | insights and recommendations with evidence |
+| GET | `/api/v1/risks?brand=&severity=&limit=` | risk flags with evidence, per-brand summary |
+| GET | `/api/v1/export/{sov,risks,mentions}.csv` | flat CSVs for Tableau / Power BI |
 | POST | `/api/v1/ask` | `{question}` → grounded answer, sources, refusal flag |
 | POST | `/api/v1/runs` | new collection; needs `X-Admin-Token` |
 
@@ -160,7 +195,7 @@ OpenAI-compatible endpoint works (Groq, Gemini, OpenAI, Ollama). Without one, At
 ## Project layout
 
 ```
-atompulse/      collector, brands, sentiment, extract, sov, insights, ask, guardrails, store, api, static/
+atompulse/      collector, brands, sentiment, extract, sov, risk, insights, ask, guardrails, store, api, static/
 tests/          unit/ (incl. metamorphic), golden/, api/, safety/, e2e/, mobile/, llm/
 postman/        Newman collection + environment
 promptfoo/      behavioural checks + generated red team

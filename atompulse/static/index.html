@@ -51,6 +51,27 @@
       <ol id="insights" class="insights" data-testid="insights-list"></ol>
     </section>
 
+    <section class="card" data-testid="risk-radar">
+      <h2>Risk radar</h2>
+      <p class="hint">Comments that need escalating: safety, legal/consumer, product and service failures.
+        Scored by category weight and comment likes; each flag keeps the clause that triggered it.</p>
+      <div class="risk-controls">
+        <label for="risk-brand">Brand</label>
+        <select id="risk-brand" data-testid="risk-brand" aria-label="Risk brand"></select>
+      </div>
+      <div id="risk-summary" class="risk-summary" data-testid="risk-summary"></div>
+      <div class="table-wrap">
+        <table data-testid="risk-table">
+          <thead><tr><th>Severity</th><th>Score</th><th>Category</th><th>Keyword</th><th>Evidence</th></tr></thead>
+          <tbody id="risk-rows"></tbody>
+        </table>
+      </div>
+      <p class="exports">Export for Tableau / Power BI:
+        <a href="/api/v1/export/sov.csv" data-testid="export-sov">SoV</a> ·
+        <a href="/api/v1/export/risks.csv" data-testid="export-risks">Risks</a> ·
+        <a href="/api/v1/export/mentions.csv" data-testid="export-mentions">Mentions</a></p>
+    </section>
+
     <section class="card">
       <h2>Ask the data</h2>
       <form id="ask-form" class="ask">

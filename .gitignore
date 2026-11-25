@@ -7,7 +7,7 @@ venv/
 .pytest_cache/
 .ruff_cache/
 .hypothesis/
-data/
+/data/
 reports/*.json
 !reports/.gitkeep
 node_modules/

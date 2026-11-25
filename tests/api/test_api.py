@@ -94,3 +94,36 @@ def test_dashboard_served(client):
     r = client.get("/")
     assert r.status_code == 200 and "AtomPulse" in r.text
     assert client.get("/static/app.js").status_code == 200
+
+
+def test_risks_endpoint_filters(client):
+    body = client.get("/api/v1/risks", params={"brand": "Atomberg", "severity": "high", "limit": 5}).json()
+    assert body["categories"]["safety"] == 50
+    assert 0 < len(body["flags"]) <= 5
+    assert all(f["brand"] == "Atomberg" and f["severity"] == "high" for f in body["flags"])
+    assert [f["score"] for f in body["flags"]] == sorted((f["score"] for f in body["flags"]), reverse=True)
+    assert body["summary"]["Atomberg"]["total"] >= body["summary"]["Atomberg"]["high"]
+
+
+@pytest.mark.parametrize("params", [{"severity": "critical"}, {"limit": 0}, {"limit": 5000}])
+def test_risks_validation(client, params):
+    assert client.get("/api/v1/risks", params=params).status_code == 422
+
+
+@pytest.mark.parametrize(
+    "table, header",
+    [
+        ("sov", "run_id,keyword,brand,sov"),
+        ("risks", "run_id,brand,severity,score"),
+        ("mentions", "run_id,keyword,video_id,source"),
+    ],
+)
+def test_csv_exports(client, table, header):
+    r = client.get(f"/api/v1/export/{table}.csv")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/csv")
+    assert r.text.startswith(header) and "attachment" in r.headers["content-disposition"]
+    assert len(r.text.splitlines()) > 10
+
+
+def test_unknown_export_is_422(client):
+    assert client.get("/api/v1/export/users.csv").status_code == 422

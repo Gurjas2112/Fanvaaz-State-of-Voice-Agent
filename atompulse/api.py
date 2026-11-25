@@ -6,6 +6,8 @@ and promptfoo suites all run against this app.
 
 from __future__ import annotations
 
+import csv
+import io
 import logging
 import secrets
 import time
@@ -15,7 +17,7 @@ from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -25,6 +27,7 @@ from .config import FOCUS_BRAND, get_settings
 from .llm import get_llm
 from .models import KeywordReport, RunInfo
 from .pipeline import run as run_pipeline
+from .risk import RISK_CATEGORIES, summarize
 from .store import Store
 
 log = logging.getLogger("atompulse.api")
@@ -153,6 +156,116 @@ def sov(
 @app.get("/api/v1/insights", tags=["sov"], responses=NO_DATA)
 def insights(info: RunInfo = Depends(latest_or_404), store: Store = Depends(get_store)) -> dict:
     return {"run": info, "insights": store.insights(info.run_id)}
+
+
+class RiskFlag(BaseModel):
+    brand: str
+    score: int
+    severity: Literal["high", "medium", "low"]
+    categories: list[str]
+    terms: list[str]
+    evidence: str
+    text: str
+    comment_id: str
+    video_id: str
+    keyword: str
+    like_count: int
+    channel_title: str
+    rank: int
+
+
+class RiskResponse(BaseModel):
+    run: RunInfo
+    summary: dict[str, dict]
+    categories: dict[str, int]
+    flags: list[RiskFlag]
+
+
+@app.get("/api/v1/risks", response_model=RiskResponse, tags=["risk"], responses=NO_DATA)
+def risks(
+    brand: str | None = Query(None, max_length=50),
+    severity: Literal["high", "medium", "low"] | None = None,
+    limit: int = Query(50, ge=1, le=1000),
+    info: RunInfo = Depends(latest_or_404),
+    store: Store = Depends(get_store),
+) -> dict:
+    """Comments that need escalation (safety, legal/consumer, product or service failure)."""
+    return {
+        "run": info,
+        "summary": summarize(store.risks(info.run_id, limit=100_000)),
+        "categories": {k: v["weight"] for k, v in RISK_CATEGORIES.items()},
+        "flags": store.risks(info.run_id, brand=brand, severity=severity, limit=limit),
+    }
+
+
+def _csv_safe(value) -> str:
+    """Neutralise spreadsheet formula injection: comment text is attacker-controlled."""
+    text = "" if value is None else str(value)
+    return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
+
+
+def _csv(rows: list[dict], columns: list[str], filename: str) -> Response:
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(columns)
+    for r in rows:
+        w.writerow([_csv_safe("|".join(r[c]) if isinstance(r.get(c), list) else r.get(c)) for c in columns])
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get(
+    "/api/v1/export/{table}.csv", tags=["export"], responses={**NO_DATA, 200: {"content": {"text/csv": {}}}}
+)
+def export(
+    table: Literal["sov", "risks", "mentions"],
+    info: RunInfo = Depends(latest_or_404),
+    store: Store = Depends(get_store),
+) -> Response:
+    """Flat CSVs for Tableau / Power BI / Excel."""
+    if table == "sov":
+        rows = []
+        for k in store.keywords(info.run_id):
+            for b in store.report(info.run_id, k).brands:
+                rows.append({"run_id": info.run_id, "keyword": k, **b.model_dump()})
+        cols = [
+            "run_id",
+            "keyword",
+            "brand",
+            "sov",
+            "mention_share",
+            "engagement_share",
+            "positive_share",
+            "net_sentiment",
+            "raw_mentions",
+            "positive",
+            "negative",
+            "videos_mentioning",
+        ]
+    elif table == "risks":
+        rows = [{"run_id": info.run_id, **r} for r in store.risks(info.run_id, limit=100_000)]
+        cols = [
+            "run_id",
+            "brand",
+            "severity",
+            "score",
+            "categories",
+            "terms",
+            "keyword",
+            "rank",
+            "channel_title",
+            "like_count",
+            "video_id",
+            "comment_id",
+            "evidence",
+        ]
+    else:
+        rows = [{"run_id": info.run_id, **m.model_dump()} for m in store.mentions(info.run_id)]
+        cols = ["run_id", "keyword", "video_id", "source", "source_id", "brand", "sentiment", "aspects"]
+    return _csv(rows, cols, f"atompulse_{table}_{info.run_id}.csv")
 
 
 @app.post("/api/v1/ask", response_model=AskResponse, tags=["ask"], responses={**NO_DATA, **BAD_BODY})

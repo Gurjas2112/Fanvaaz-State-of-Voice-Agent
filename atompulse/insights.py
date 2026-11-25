@@ -48,7 +48,11 @@ def _brand(report: KeywordReport, brand: str):
 
 
 def build(
-    reports: dict[str, KeywordReport], videos: list[Video], mentions: list[Mention], focus: str = FOCUS_BRAND
+    reports: dict[str, KeywordReport],
+    videos: list[Video],
+    mentions: list[Mention],
+    focus: str = FOCUS_BRAND,
+    risks: list[dict] | None = None,
 ) -> list[dict]:
     out: list[dict] = []
     overall = reports.get("all")
@@ -254,6 +258,49 @@ def build(
                 "evidence": {"count": len(gaps)},
             }
         )
+    # Risk radar (adapted from the CRIF hackathon offense rating; see risk.py)
+    if risks:
+        mine = [r for r in risks if r["brand"] == focus]
+        safety = [r for r in mine if "safety" in r["categories"]]
+        high = [r for r in mine if r["severity"] == "high"]
+        if mine:
+            cats = Counter(c for r in mine for c in r["categories"])
+            top_cat, top_n = cats.most_common(1)[0]
+            text = (
+                f"{len(mine)} {focus} comments carry escalation risk ({len(high)} high severity). "
+                f"Most common: {top_cat.replace('_', ' ')} ({top_n})."
+            )
+            if safety:
+                text += (
+                    f" {len(safety)} mention a safety issue such as sparking or burning: route them to "
+                    f"the quality team today and reply publicly within 24 hours."
+                )
+            out.append(
+                {
+                    "id": "risk_own",
+                    "kind": "alert",
+                    "title": "Risk radar: escalate",
+                    "text": text,
+                    "evidence": {"total": len(mine), "high": len(high), "top": top_n, "safety": len(safety)},
+                }
+            )
+        rivals = Counter(
+            r["brand"] for r in risks if r["brand"] != focus and "product_failure" in r["categories"]
+        )
+        if rivals:
+            rb, rn = rivals.most_common(1)[0]
+            out.append(
+                {
+                    "id": "risk_rival",
+                    "kind": "recommendation",
+                    "title": "Competitor weak spot",
+                    "text": (
+                        f"{rb} has the most product-failure complaints among competitors ({rn}). "
+                        f"Reliability and warranty content can win those buyers."
+                    ),
+                    "evidence": {"count": rn},
+                }
+            )
     for ins in out:
         ins["text"] = safe_output(ins["text"])
         ins["source"] = "rules"
