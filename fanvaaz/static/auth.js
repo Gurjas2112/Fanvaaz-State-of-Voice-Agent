@@ -3,7 +3,7 @@
   const side = document.getElementById("side-fan");
   if (side) {
     HZ.fan(side, [0.29, 0.18, 0.17, 0.1, 0.07, 0.06].map((sov, i) => ({ brand: i ? `b${i}` : HZ.FOCUS, sov })),
-      { labels: false, title: "Hawaaz" });
+      { labels: false, title: "Fanvaaz" });
   }
   const next = new URLSearchParams(location.search).get("next");
   const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "/app";

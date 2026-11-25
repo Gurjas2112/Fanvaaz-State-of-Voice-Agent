@@ -1,11 +1,11 @@
-# Hawaaz
+# Fanvaaz
 
 **Hear what India says about your fans.** Atomberg's daily YouTube Share of Voice desk, with a reply inbox for
 risky comments, and a test harness that grades the AI behind it.
 
-*Hawaaz* = *hawa* (air) + *awaaz* (voice): the voice of the people your fans keep cool.
+*Fanvaaz* = *fan* + *awaaz* (Hindi for voice). "Fan" in both senses: the ceiling fans Atomberg makes and the fans who talk about them.
 
-Hawaaz searches YouTube for "smart fan" and five related keywords, reads the top 50 videos and their top
+Fanvaaz searches YouTube for "smart fan" and five related keywords, reads the top 50 videos and their top
 comments, finds every fan-brand mention, scores the sentiment aimed at each brand (English and Hinglish), and
 reports Atomberg's Share of Voice against nine competitors. It then writes evidence-backed recommendations for the
 content and marketing team, and lets them ask follow-up questions in plain language.
@@ -26,19 +26,19 @@ Every stage is guarded and gated in CI: golden-set accuracy, metamorphic propert
 ## Quick start
 
 ```bash
-git clone https://github.com/Gurjas2112/Hawaaz-SoV-Agent.git && cd Hawaaz-SoV-Agent
+git clone https://github.com/Gurjas2112/Fanvaaz-SoV-Agent.git && cd Fanvaaz-SoV-Agent
 pip install -e ".[dev]"
-export HAWAAZ_ADMIN_EMAIL=you@example.com HAWAAZ_ADMIN_PASSWORD='choose-a-long-passphrase'
-hawaaz run --source demo           # seed from the bundled synthetic dataset (no keys, no network)
-hawaaz serve                       # http://127.0.0.1:8000 -> sign in at /login (API docs at /docs)
+export FANVAAZ_ADMIN_EMAIL=you@example.com FANVAAZ_ADMIN_PASSWORD='choose-a-long-passphrase'
+fanvaaz run --source demo           # seed from the bundled synthetic dataset (no keys, no network)
+fanvaaz serve                       # http://127.0.0.1:8000 -> sign in at /login (API docs at /docs)
 pytest -m "not mobile and not llm" # every offline gate + Playwright
 ```
 
 Live data (needs a free YouTube Data API v3 key):
 
 ```bash
-cp .env.example .env               # set HAWAAZ_YOUTUBE_API_KEY (and optionally an LLM)
-hawaaz run --source youtube     # ~906 of the 10,000 free daily quota units
+cp .env.example .env               # set FANVAAZ_YOUTUBE_API_KEY (and optionally an LLM)
+fanvaaz run --source youtube     # ~906 of the 10,000 free daily quota units
 python scripts/two_pager.py        # writes docs/TWO_PAGER.md for the submission
 ```
 
@@ -50,8 +50,8 @@ Docker: `docker compose up --build` (seeds a demo run on first boot, serves on :
 
 | Page | Who | What it is for |
 | --- | --- | --- |
-| `/` | anyone | What Hawaaz does, with an example share-of-voice fan; sign in or create an account |
-| `/signup`, `/login` | anyone | Accounts; sign-up can be limited to company domains (`HAWAAZ_SIGNUP_DOMAINS=atomberg.com`) |
+| `/` | anyone | What Fanvaaz does, with an example share-of-voice fan; sign in or create an account |
+| `/signup`, `/login` | anyone | Accounts; sign-up can be limited to company domains (`FANVAAZ_SIGNUP_DOMAINS=atomberg.com`) |
 | `/app` | analysts, admins | **Today**: one-sentence brief with change since the last run · **Voice**: the fan chart and ranking per search term · **Reply inbox**: risk comments to mark handled or dismissed (status carries over to later runs) · **This week**: recommendations · **Ask**: guarded Q&A · CSV downloads |
 | `/admin` | admins | Collect from YouTube or load demo data, run history and API units, people (role, access, password reset), setup status |
 
@@ -60,7 +60,7 @@ variables shown on the admin page.
 
 **Designed for daily use.** The first screen is one sentence ("Atomberg holds 28.7% of the conversation, #1 of 10,
 up 1.2 pts since the last run. 24 safety comments are waiting for a reply."), then the inbox. With
-`HAWAAZ_DAILY_RUN_AT=06:30` a fresh collection lands every morning; a date-keyed claim row stops two workers
+`FANVAAZ_DAILY_RUN_AT=06:30` a fresh collection lands every morning; a date-keyed claim row stops two workers
 collecting twice.
 
 **Visual identity.** The share of voice is drawn as a ceiling fan: one swept blade per brand, its length growing
@@ -74,18 +74,18 @@ Hyperlegible for reading, both self-hosted (SIL OFL), so the pages make no third
 | --- | --- |
 | Passwords | scrypt (n=2^14, r=8, p=1), per-user salt, constant-time compare; min 10 characters, common-password list |
 | Sessions | 32-byte random token in an `HttpOnly`, `SameSite=Lax` cookie (`Secure` behind HTTPS); only its SHA-256 is stored; revoked on logout, deactivation or password reset |
-| CSRF | cookie-authenticated writes need `X-Requested-With: hawaaz`; no CORS is allowed |
+| CSRF | cookie-authenticated writes need `X-Requested-With: fanvaaz`; no CORS is allowed |
 | Brute force | 5 failed sign-ins per email per 15 minutes → 429; same message and work for unknown emails |
 | Roles | `analyst` (read, triage, ask) and `admin` (people, runs); the last active admin cannot be removed, and admins cannot demote themselves |
-| Automation | `Authorization: Bearer $HAWAAZ_API_TOKEN` for CI tools (Newman, promptfoo, Schemathesis, k6) |
+| Automation | `Authorization: Bearer $FANVAAZ_API_TOKEN` for CI tools (Newman, promptfoo, Schemathesis, k6) |
 | Requests | strict bodies: no type coercion (`"active": 0` is rejected) and no unknown fields |
 | Pages | CSP `default-src 'self'` (no inline script), `X-Frame-Options: DENY`, `nosniff`, open-redirect-safe `?next=` |
 
 ### MCP servers: none added, on purpose
 
-The problem statement needs an agent and a two-pager; the role needs test automation and LLM evaluation. Hawaaz
+The problem statement needs an agent and a two-pager; the role needs test automation and LLM evaluation. Fanvaaz
 already calls the official YouTube Data API directly, so a community YouTube MCP server would wrap the same API and
-add a dependency without adding capability. Exposing Hawaaz itself as an MCP server would be optional, so it is
+add a dependency without adding capability. Exposing Fanvaaz itself as an MCP server would be optional, so it is
 left out.
 
 ## How it works
@@ -128,7 +128,7 @@ team's [CRIF India hackathon project](https://github.com/Gurjas2112/CRIF-Hackath
 Score = sum of the comment's category weights (each once) + 10 if the brand mention is negative, then multiplied by
 `1 + log10(1 + likes) / 2`, because a liked complaint reaches more buyers. High at 60 or any safety flag, medium at 30.
 
-| CRIF approach | Problem for this use | Hawaaz |
+| CRIF approach | Problem for this use | Fanvaaz |
 | --- | --- | --- |
 | Any token in a 4,472-word negative list adds +10 | "no noise" and "not bad" counted as negative | negation-aware terms; sentiment from the brand-targeted engine |
 | Whole article scored | every brand in it shares the blame | risk goes to the nearest brand in the clause ("Havells caught fire, switched to Atomberg" flags Havells) |
@@ -243,8 +243,8 @@ Reports land in `reports/` (golden, safety, promptfoo, k6, DeepEval, Ragas) and 
 
 ## Configuration
 
-All settings are environment variables with the `HAWAAZ_` prefix (see `.env.example`). The LLM is optional; any
-OpenAI-compatible endpoint works (Groq, Gemini, OpenAI, Ollama). Without one, Hawaaz runs fully on rules.
+All settings are environment variables with the `FANVAAZ_` prefix (see `.env.example`). The LLM is optional; any
+OpenAI-compatible endpoint works (Groq, Gemini, OpenAI, Ollama). Without one, Fanvaaz runs fully on rules.
 
 ## Limitations
 
@@ -258,7 +258,7 @@ OpenAI-compatible endpoint works (Groq, Gemini, OpenAI, Ollama). Without one, Ha
 ## Project layout
 
 ```
-hawaaz/         collector, brands, sentiment, extract, sov, risk, insights, ask, guardrails, brief, auth,
+fanvaaz/         collector, brands, sentiment, extract, sov, risk, insights, ask, guardrails, brief, auth,
                 scheduler, store, api, static/ (pages, hz.css, hz.js fan chart, self-hosted fonts)
 tests/          unit/ (incl. metamorphic), golden/, api/, safety/, e2e/, mobile/, llm/
 postman/        Newman collection + environment

@@ -16,7 +16,7 @@ from .llm import LLM, parse_json
 from .models import Mention, Sentiment, Video
 from .sentiment import aspects_of, score_text
 
-log = logging.getLogger("hawaaz.extract")
+log = logging.getLogger("fanvaaz.extract")
 
 SENTIMENTS: set[str] = {"positive", "neutral", "negative"}
 

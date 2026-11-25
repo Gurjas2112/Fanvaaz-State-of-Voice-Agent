@@ -1,7 +1,7 @@
 import pytest
 
-from hawaaz.models import Comment, Mention, Video
-from hawaaz.risk import find_risks, flag_comments, reach_multiplier, severity, summarize
+from fanvaaz.models import Comment, Mention, Video
+from fanvaaz.risk import find_risks, flag_comments, reach_multiplier, severity, summarize
 
 
 def flags_for(*texts, likes=0, mentions=None):

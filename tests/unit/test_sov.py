@@ -2,9 +2,9 @@ import math
 
 import pytest
 
-from hawaaz.config import Settings
-from hawaaz.models import Comment, Mention, Video
-from hawaaz.sov import compute, engagement, rank_weight
+from fanvaaz.config import Settings
+from fanvaaz.models import Comment, Mention, Video
+from fanvaaz.sov import compute, engagement, rank_weight
 
 S = Settings(w_mentions=0.3, w_engagement=0.4, w_positive=0.3)
 

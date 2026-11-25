@@ -3,12 +3,12 @@
 * Passwords: scrypt (stdlib), per-user salt, constant-time compare.
 * Sessions: random 32-byte token in an HttpOnly, SameSite=Lax cookie; only its
   SHA-256 is stored, so a leaked database cannot be replayed as a login.
-* CSRF: every state-changing request must carry `X-Requested-With: hawaaz`.
+* CSRF: every state-changing request must carry `X-Requested-With: fanvaaz`.
   Browsers cannot add that header cross-site without a CORS preflight, and the
   API allows no cross-origin requests.
 * Brute force: 5 failed logins per email in 15 minutes -> 429.
 * Roles: `admin` (users, runs, everything) and `analyst` (read, ask, triage).
-* Automation: `Authorization: Bearer <HAWAAZ_API_TOKEN>` acts as an admin
+* Automation: `Authorization: Bearer <FANVAAZ_API_TOKEN>` acts as an admin
   service account, for CI tools (Newman, promptfoo, Schemathesis, k6).
 """
 
@@ -50,14 +50,14 @@ COMMON_PASSWORDS = {
     "password12",
     "iloveyou12",
     "atomberg123",
-    "hawaaz1234",
+    "fanvaaz1234",
     "welcome123",
     "admin12345",
     "letmein123",
 }
-COOKIE = "hz_session"
+COOKIE = "fv_session"
 CSRF_HEADER = "x-requested-with"
-CSRF_VALUE = "hawaaz"
+CSRF_VALUE = "fanvaaz"
 
 
 class AuthError(Exception):
@@ -90,7 +90,7 @@ class User:
 
 SERVICE_USER = User(
     id=0,
-    email="service@hawaaz.local",
+    email="service@fanvaaz.local",
     name="Service token",
     role="admin",
     active=True,

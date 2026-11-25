@@ -90,7 +90,7 @@ def test_openapi_lists_every_route(client):
 def test_pages_served(client):
     for path in ["/", "/app", "/admin"]:
         r = client.get(path)
-        assert r.status_code == 200 and "Hawaaz" in r.text, path
+        assert r.status_code == 200 and "Fanvaaz" in r.text, path
     assert client.get("/static/app.js").status_code == 200
 
 

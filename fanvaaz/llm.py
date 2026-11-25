@@ -16,7 +16,7 @@ import httpx
 
 from .config import Settings, get_settings
 
-log = logging.getLogger("hawaaz.llm")
+log = logging.getLogger("fanvaaz.llm")
 
 
 class LLM(Protocol):

@@ -17,7 +17,7 @@ pytestmark = pytest.mark.e2e
 pw = pytest.importorskip("playwright.sync_api")
 expect = pw.expect
 
-ADMIN = ("admin@hawaaz.test", "Admin-pass-2026!")
+ADMIN = ("admin@fanvaaz.test", "Admin-pass-2026!")
 ANALYST_PW = "analyst-pass-2026"
 
 
@@ -25,7 +25,7 @@ ANALYST_PW = "analyst-pass-2026"
 def server_url(seeded_store):
     import uvicorn
 
-    from hawaaz.api import app, get_store
+    from fanvaaz.api import app, get_store
 
     app.dependency_overrides[get_store] = lambda: seeded_store
     with socket.socket() as s:
@@ -45,8 +45,8 @@ def server_url(seeded_store):
 
 @pytest.fixture(scope="session")
 def analyst(seeded_store, server_url):
-    from hawaaz.auth import Accounts
-    from hawaaz.config import get_settings
+    from fanvaaz.auth import Accounts
+    from fanvaaz.config import get_settings
 
     email = f"e2e-{uuid.uuid4().hex[:6]}@example.com"
     Accounts(seeded_store, get_settings()).create_user(email, ANALYST_PW, "Meera Analyst")

@@ -20,8 +20,8 @@ pytestmark = pytest.mark.mobile
 
 APPIUM_URL = os.getenv("APPIUM_URL")
 APP_URL = os.getenv("APP_URL", "http://10.0.2.2:8000")
-EMAIL = os.getenv("HAWAAZ_ADMIN_EMAIL", "admin@hawaaz.test")
-PASSWORD = os.getenv("HAWAAZ_ADMIN_PASSWORD", "Admin-pass-2026!")
+EMAIL = os.getenv("FANVAAZ_ADMIN_EMAIL", "admin@fanvaaz.test")
+PASSWORD = os.getenv("FANVAAZ_ADMIN_PASSWORD", "Admin-pass-2026!")
 
 if not APPIUM_URL:
     pytest.skip("set APPIUM_URL to run Appium tests", allow_module_level=True)

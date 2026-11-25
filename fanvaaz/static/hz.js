@@ -4,7 +4,7 @@ const HZ = (() => {
   const FOCUS = "Atomberg";
 
   async function api(path, opts = {}) {
-    const headers = { "X-Requested-With": "hawaaz", ...(opts.body ? { "Content-Type": "application/json" } : {}) };
+    const headers = { "X-Requested-With": "fanvaaz", ...(opts.body ? { "Content-Type": "application/json" } : {}) };
     const r = await fetch(path, { credentials: "same-origin", ...opts, headers: { ...headers, ...(opts.headers || {}) } });
     if (r.status === 401 && !path.includes("/auth/")) {
       location.href = `/login?next=${encodeURIComponent(location.pathname)}`;

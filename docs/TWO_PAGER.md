@@ -1,4 +1,4 @@
-# Hawaaz: Atomberg's Share of Voice on YouTube
+# Fanvaaz: Atomberg's Share of Voice on YouTube
 
 ## Page 1: How it works
 
@@ -24,7 +24,7 @@
 | Product | Landing, sign-up/sign-in with roles, daily brief with change since the last run, reply inbox, admin panel; FastAPI (OpenAPI), SQLite, Docker |
 | Quality | pytest + Hypothesis, golden sets, DeepEval, Ragas, promptfoo, Postman/Newman, Schemathesis, Playwright, Appium, k6, GitHub Actions |
 
-**Links:** code https://github.com/Gurjas2112/Hawaaz-SoV-Agent · live demo <add your deployed URL>
+**Links:** code https://github.com/Gurjas2112/Fanvaaz-SoV-Agent · live demo <add your deployed URL>
 
 **Measured quality**
 
@@ -39,9 +39,9 @@
 
 ## Page 2: Findings and recommendations
 
-> **TEMPLATE ONLY: the numbers below come from the synthetic demo dataset, not YouTube.** Run `hawaaz run --source youtube` and re-run this script before submitting.
+> **TEMPLATE ONLY: the numbers below come from the synthetic demo dataset, not YouTube.** Run `fanvaaz run --source youtube` and re-run this script before submitting.
 
-Run `20261125T085514-e0d761` · 300 result slots · 5640 comments · source: synthetic-demo
+Run `20261125T103621-a647e3` · 300 result slots · 5640 comments · source: synthetic-demo
 
 | Keyword | Atomberg SoV | Rank | Leader (SoV) | Atomberg positive share |
 | --- | --- | --- | --- | --- |

@@ -1,7 +1,7 @@
 import pytest
 
-from hawaaz.extract import label_text
-from hawaaz.sentiment import aspects_of
+from fanvaaz.extract import label_text
+from fanvaaz.sentiment import aspects_of
 
 
 @pytest.mark.parametrize(

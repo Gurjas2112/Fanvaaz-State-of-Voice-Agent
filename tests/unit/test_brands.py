@@ -1,6 +1,6 @@
 import pytest
 
-from hawaaz.brands import brands_in, find_spans
+from fanvaaz.brands import brands_in, find_spans
 
 
 @pytest.mark.parametrize(

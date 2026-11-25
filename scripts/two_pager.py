@@ -4,7 +4,7 @@ Page 1: tech stack, tools, links, quality results (read from reports/*.json).
 Page 2: findings and recommendations (read from the latest stored run).
 
 If the latest run is the synthetic demo, page 2 is stamped as a template so it
-cannot be submitted by mistake. Run `hawaaz run --source youtube` first.
+cannot be submitted by mistake. Run `fanvaaz run --source youtube` first.
 """
 
 from __future__ import annotations
@@ -12,13 +12,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from hawaaz.config import DEFAULT_KEYWORDS, FOCUS_BRAND, get_settings
-from hawaaz.store import Store
+from fanvaaz.config import DEFAULT_KEYWORDS, FOCUS_BRAND, get_settings
+from fanvaaz.store import Store
 
 ROOT = Path(__file__).resolve().parent.parent
 REPORTS = ROOT / "reports"
 OUT = ROOT / "docs" / "TWO_PAGER.md"
-REPO_URL = "https://github.com/Gurjas2112/Hawaaz-SoV-Agent"  # update after pushing
+REPO_URL = "https://github.com/Gurjas2112/Fanvaaz-SoV-Agent"  # update after pushing
 DEMO_URL = "<add your deployed URL>"
 
 
@@ -69,13 +69,13 @@ def main() -> None:
     st = Store(s.db_path)
     run = st.latest_run()
     if not run:
-        raise SystemExit("No runs yet. hawaaz run --source youtube")
+        raise SystemExit("No runs yet. fanvaaz run --source youtube")
     reports = {k: st.report(run.run_id, k) for k in st.keywords(run.run_id)}
     insights = st.insights(run.run_id)
     demo = run.source == "synthetic-demo"
 
     lines = [
-        "# Hawaaz: Atomberg's Share of Voice on YouTube",
+        "# Fanvaaz: Atomberg's Share of Voice on YouTube",
         "",
         "## Page 1: How it works",
         "",
@@ -122,7 +122,7 @@ def main() -> None:
     if demo:
         lines += [
             "> **TEMPLATE ONLY: the numbers below come from the synthetic demo dataset, not YouTube.** "
-            "Run `hawaaz run --source youtube` and re-run this script before submitting.",
+            "Run `fanvaaz run --source youtube` and re-run this script before submitting.",
             "",
         ]
     lines += [

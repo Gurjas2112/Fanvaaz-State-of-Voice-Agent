@@ -1,6 +1,6 @@
 """The morning brief: what changed since the previous run, in one sentence.
 
-Built for daily use: a marketer opens Hawaaz, reads one line, then works the
+Built for daily use: a marketer opens Fanvaaz, reads one line, then works the
 reply inbox. Everything is computed from stored runs; nothing is generated.
 """
 

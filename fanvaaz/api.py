@@ -1,7 +1,7 @@
 """FastAPI service: pages, auth, JSON API.
 
 Pages   /  /login  /signup  /app (signed in)  /admin (admins)
-API     /api/v1/...  (signed-in session cookie, or `Authorization: Bearer <HAWAAZ_API_TOKEN>`)
+API     /api/v1/...  (signed-in session cookie, or `Authorization: Bearer <FANVAAZ_API_TOKEN>`)
 Docs    /docs (OpenAPI). Postman, Schemathesis, Playwright, Appium and promptfoo run against this app.
 """
 
@@ -33,7 +33,7 @@ from .pipeline import run as run_pipeline
 from .risk import RISK_CATEGORIES, summarize
 from .store import Store
 
-log = logging.getLogger("hawaaz.api")
+log = logging.getLogger("fanvaaz.api")
 STATIC = FilePath(__file__).parent / "static"
 
 
@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Hawaaz API",
+    title="Fanvaaz API",
     version=__version__,
     description="Atomberg's daily YouTube Share of Voice, risk inbox and guarded Q&A.",
     lifespan=lifespan,
@@ -500,7 +500,7 @@ def export(
     else:
         rows = [{"run_id": info.run_id, **m.model_dump()} for m in store.mentions(info.run_id)]
         cols = ["run_id", "keyword", "video_id", "source", "source_id", "brand", "sentiment", "aspects"]
-    return _csv(rows, cols, f"hawaaz_{table}_{info.run_id}.csv")
+    return _csv(rows, cols, f"fanvaaz_{table}_{info.run_id}.csv")
 
 
 @app.post("/api/v1/ask", response_model=AskResponse, tags=["ask"], responses={**NO_DATA, **WRITE})

@@ -75,12 +75,12 @@ ASPECTS: dict[str, list[str]] = {
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="HAWAAZ_", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="FANVAAZ_", extra="ignore")
 
     # Data
-    db_path: Path = Field(default=ROOT / "data" / "hawaaz.db")
+    db_path: Path = Field(default=ROOT / "data" / "fanvaaz.db")
     raw_dir: Path = Field(default=ROOT / "data" / "raw")
-    demo_data: Path = Field(default=ROOT / "hawaaz" / "data" / "demo_raw.json")
+    demo_data: Path = Field(default=ROOT / "fanvaaz" / "data" / "demo_raw.json")
 
     # Collection (N is justified in the README: one search page = 50 results)
     youtube_api_key: str | None = None

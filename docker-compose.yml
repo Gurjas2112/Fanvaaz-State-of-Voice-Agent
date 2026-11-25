@@ -6,8 +6,8 @@ services:
       - path: .env
         required: false
     volumes:
-      - hawaaz-data:/app/data
+      - fanvaaz-data:/app/data
     restart: unless-stopped
 
 volumes:
-  hawaaz-data:
+  fanvaaz-data:

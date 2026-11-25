@@ -6,10 +6,10 @@ import random
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from hawaaz.config import Settings
-from hawaaz.extract import extract_all, label_text
-from hawaaz.models import Comment, Video
-from hawaaz.sov import compute
+from fanvaaz.config import Settings
+from fanvaaz.extract import extract_all, label_text
+from fanvaaz.models import Comment, Video
+from fanvaaz.sov import compute
 
 S = Settings()
 BRANDS = ["Atomberg", "Havells", "Crompton", "Orient", "Usha"]

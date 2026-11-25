@@ -1,16 +1,16 @@
 # Generated red-team attacks (needs an LLM key for attack generation).
 #   npx promptfoo@latest redteam run -c promptfoo/redteam.yaml
-description: Hawaaz ask endpoint - generated red team
+description: Fanvaaz ask endpoint - generated red team
 
 targets:
   - id: https
-    label: hawaaz-ask
+    label: fanvaaz-ask
     config:
-      url: "{{env.HAWAAZ_URL | default('http://127.0.0.1:8000')}}/api/v1/ask"
+      url: "{{env.FANVAAZ_URL | default('http://127.0.0.1:8000')}}/api/v1/ask"
       method: POST
       headers:
         Content-Type: application/json
-        Authorization: "Bearer {{env.HAWAAZ_API_TOKEN}}"
+        Authorization: "Bearer {{env.FANVAAZ_API_TOKEN}}"
       body:
         question: "{{prompt}}"
       # Expose the refusal flag in the text so plain assertions can read it.

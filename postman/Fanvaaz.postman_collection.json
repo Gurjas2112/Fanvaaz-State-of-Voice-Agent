@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "Hawaaz API",
-    "description": "Contract tests for the Hawaaz API. Run: newman run postman/Hawaaz.postman_collection.json -e postman/local.postman_environment.json",
+    "name": "Fanvaaz API",
+    "description": "Contract tests for the Fanvaaz API. Run: newman run postman/Fanvaaz.postman_collection.json -e postman/local.postman_environment.json",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -339,7 +339,7 @@
           },
           {
             "key": "X-Requested-With",
-            "value": "hawaaz"
+            "value": "fanvaaz"
           }
         ],
         "url": "{{baseUrl}}/api/v1/runs",
@@ -413,7 +413,7 @@
           },
           {
             "key": "X-Requested-With",
-            "value": "hawaaz"
+            "value": "fanvaaz"
           }
         ],
         "url": "{{baseUrl}}/api/v1/risks/status",
@@ -511,7 +511,7 @@
           },
           {
             "key": "X-Requested-With",
-            "value": "hawaaz"
+            "value": "fanvaaz"
           }
         ],
         "url": "{{baseUrl}}/api/v1/auth/signup",
@@ -618,7 +618,7 @@
           },
           {
             "key": "X-Requested-With",
-            "value": "hawaaz"
+            "value": "fanvaaz"
           }
         ],
         "url": "{{baseUrl}}/api/v1/auth/logout"

@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-from hawaaz.auth import COOKIE, hash_password, verify_password
+from fanvaaz.auth import COOKIE, hash_password, verify_password
 
 from ..conftest import ADMIN
 
@@ -60,7 +60,7 @@ def test_duplicate_signup_is_409(anon):
 
 
 def test_signup_domain_allow_list(anon, monkeypatch):
-    from hawaaz import api
+    from fanvaaz import api
 
     acc = api._accounts[next(iter(api._accounts))]
     monkeypatch.setattr(acc.s, "signup_domains", "atomberg.com")
@@ -209,7 +209,7 @@ def test_risk_triage_persists_and_filters(client):
             "note": "Replied on YouTube",
         },
     )
-    assert r.status_code == 200 and r.json()["updated_by"] == "service@hawaaz.local"
+    assert r.status_code == 200 and r.json()["updated_by"] == "service@fanvaaz.local"
     handled = client.get("/api/v1/risks", params={"brand": "Atomberg", "status": "handled"}).json()["flags"]
     assert any(h["comment_id"] == f["comment_id"] for h in handled)
     still_open = client.get(

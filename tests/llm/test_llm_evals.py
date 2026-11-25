@@ -1,11 +1,11 @@
 """LLM-graded evaluation with DeepEval and Ragas (needs a real LLM key).
 
-Run:  HAWAAZ_LLM_BASE_URL=https://api.groq.com/openai/v1 \
-      HAWAAZ_LLM_API_KEY=... pip install -e ".[llm-evals]" && pytest -m llm
+Run:  FANVAAZ_LLM_BASE_URL=https://api.groq.com/openai/v1 \
+      FANVAAZ_LLM_API_KEY=... pip install -e ".[llm-evals]" && pytest -m llm
 
 The same OpenAI-compatible endpoint is used as the system under test and as the
 judge. For a stricter setup, point the judge at a different, stronger model with
-HAWAAZ_JUDGE_MODEL.
+FANVAAZ_JUDGE_MODEL.
 """
 
 from __future__ import annotations
@@ -15,20 +15,20 @@ import os
 
 import pytest
 
-from hawaaz.ask import Answerer
-from hawaaz.config import Settings
-from hawaaz.insights import build, rewrite_with_llm
-from hawaaz.llm import OpenAICompatLLM, parse_json
+from fanvaaz.ask import Answerer
+from fanvaaz.config import Settings
+from fanvaaz.insights import build, rewrite_with_llm
+from fanvaaz.llm import OpenAICompatLLM, parse_json
 
 pytestmark = pytest.mark.llm
 
-BASE = os.getenv("HAWAAZ_LLM_BASE_URL") or os.getenv("LLM_EVAL_BASE_URL")
-KEY = os.getenv("HAWAAZ_LLM_API_KEY") or os.getenv("LLM_EVAL_API_KEY")
-MODEL = os.getenv("HAWAAZ_LLM_MODEL", "llama-3.3-70b-versatile")
-JUDGE = os.getenv("HAWAAZ_JUDGE_MODEL", MODEL)
+BASE = os.getenv("FANVAAZ_LLM_BASE_URL") or os.getenv("LLM_EVAL_BASE_URL")
+KEY = os.getenv("FANVAAZ_LLM_API_KEY") or os.getenv("LLM_EVAL_API_KEY")
+MODEL = os.getenv("FANVAAZ_LLM_MODEL", "llama-3.3-70b-versatile")
+JUDGE = os.getenv("FANVAAZ_JUDGE_MODEL", MODEL)
 
 if not (BASE and KEY):
-    pytest.skip("LLM evals need HAWAAZ_LLM_BASE_URL and HAWAAZ_LLM_API_KEY", allow_module_level=True)
+    pytest.skip("LLM evals need FANVAAZ_LLM_BASE_URL and FANVAAZ_LLM_API_KEY", allow_module_level=True)
 
 QUESTIONS = [
     "Why do people complain about Atomberg?",

@@ -66,9 +66,9 @@
   async function loadSystem() {
     const s = await api("/api/v1/admin/system");
     const rows = [
-      ["YouTube API key", s.youtube_key_set ? "Set" : "Not set: add HAWAAZ_YOUTUBE_API_KEY to collect live data"],
+      ["YouTube API key", s.youtube_key_set ? "Set" : "Not set: add FANVAAZ_YOUTUBE_API_KEY to collect live data"],
       ["Language model", s.llm_configured ? `On (${s.llm_model})` : "Off: rules only"],
-      ["Daily collection", s.daily_run_at ? `Every day at ${s.daily_run_at} (${s.timezone})` : "Off: set HAWAAZ_DAILY_RUN_AT, for example 06:30"],
+      ["Daily collection", s.daily_run_at ? `Every day at ${s.daily_run_at} (${s.timezone})` : "Off: set FANVAAZ_DAILY_RUN_AT, for example 06:30"],
       ["Who can sign up", s.signup_domains.length ? s.signup_domains.map((d) => "@" + d).join(", ") : "Anyone with the link"],
       ["People", String(s.users)],
       ["Version", s.version],

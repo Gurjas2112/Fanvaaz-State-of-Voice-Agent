@@ -4,7 +4,7 @@ import http from "k6/http";
 import { check } from "k6";
 
 const BASE = __ENV.BASE_URL || "http://127.0.0.1:8000";
-const AUTH = { Authorization: `Bearer ${__ENV.HAWAAZ_API_TOKEN || "local-service-token"}` };
+const AUTH = { Authorization: `Bearer ${__ENV.FANVAAZ_API_TOKEN || "local-service-token"}` };
 const KEYWORDS = ["all", "smart fan", "BLDC fan", "energy saving fan"];
 
 export const options = {

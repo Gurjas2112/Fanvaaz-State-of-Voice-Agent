@@ -5,9 +5,9 @@ import json
 import httpx
 import pytest
 
-from hawaaz.collector import QuotaExceeded, YouTubeCollector
-from hawaaz.config import Settings
-from hawaaz.text import contains_pii
+from fanvaaz.collector import QuotaExceeded, YouTubeCollector
+from fanvaaz.config import Settings
+from fanvaaz.text import contains_pii
 
 
 def fake_youtube(request: httpx.Request) -> httpx.Response:

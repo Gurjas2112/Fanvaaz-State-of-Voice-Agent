@@ -18,7 +18,7 @@ from .llm import LLM, parse_json
 from .models import KeywordReport, Mention, Video
 from .sov import rank_weight
 
-log = logging.getLogger("hawaaz.insights")
+log = logging.getLogger("fanvaaz.insights")
 
 REWRITE_SYSTEM = """You polish marketing insights for Atomberg's content team.
 Rewrite each insight's text to be clear and actionable in at most 2 sentences.

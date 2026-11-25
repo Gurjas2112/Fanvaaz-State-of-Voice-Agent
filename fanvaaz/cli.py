@@ -1,4 +1,4 @@
-"""Command line: `hawaaz run`, `hawaaz serve`, `hawaaz report`."""
+"""Command line: `fanvaaz run`, `fanvaaz serve`, `fanvaaz report`."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from .store import Store
 
 def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    p = argparse.ArgumentParser(prog="hawaaz")
+    p = argparse.ArgumentParser(prog="fanvaaz")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     r = sub.add_parser("run", help="collect, score and store a run")
@@ -34,12 +34,12 @@ def main(argv: list[str] | None = None) -> None:
     elif args.cmd == "serve":
         import uvicorn
 
-        uvicorn.run("hawaaz.api:app", host=args.host, port=args.port)
+        uvicorn.run("fanvaaz.api:app", host=args.host, port=args.port)
     elif args.cmd == "report":
         st = Store(get_settings().db_path)
         latest = st.latest_run()
         if not latest:
-            raise SystemExit("no runs yet: hawaaz run --source demo")
+            raise SystemExit("no runs yet: fanvaaz run --source demo")
         out = {
             "run": latest.model_dump(),
             "reports": {k: st.report(latest.run_id, k).model_dump() for k in st.keywords(latest.run_id)},
