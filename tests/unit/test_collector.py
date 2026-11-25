@@ -5,9 +5,9 @@ import json
 import httpx
 import pytest
 
-from atompulse.collector import QuotaExceeded, YouTubeCollector
-from atompulse.config import Settings
-from atompulse.text import contains_pii
+from hawaaz.collector import QuotaExceeded, YouTubeCollector
+from hawaaz.config import Settings
+from hawaaz.text import contains_pii
 
 
 def fake_youtube(request: httpx.Request) -> httpx.Response:

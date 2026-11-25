@@ -1,7 +1,7 @@
 import pytest
 
-from atompulse.extract import label_text
-from atompulse.sentiment import aspects_of
+from hawaaz.extract import label_text
+from hawaaz.sentiment import aspects_of
 
 
 @pytest.mark.parametrize(

@@ -2,7 +2,7 @@
 
 It exists so the app, the dashboard and the whole test harness run with no API
 key and no network. It is not real YouTube data and must never be used for the
-findings page of the two-pager: run `atompulse run --source youtube` for that.
+findings page of the two-pager: run `hawaaz run --source youtube` for that.
 
 Deterministic: the same seed always writes the same file.
 """
@@ -14,7 +14,7 @@ import random
 from pathlib import Path
 
 SEED = 20261125
-OUT = Path(__file__).resolve().parent.parent / "atompulse" / "data" / "demo_raw.json"
+OUT = Path(__file__).resolve().parent.parent / "hawaaz" / "data" / "demo_raw.json"
 
 KEYWORDS = [
     "smart fan",

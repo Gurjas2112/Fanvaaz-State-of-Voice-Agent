@@ -75,12 +75,12 @@ ASPECTS: dict[str, list[str]] = {
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="ATOMPULSE_", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="HAWAAZ_", extra="ignore")
 
     # Data
-    db_path: Path = Field(default=ROOT / "data" / "atompulse.db")
+    db_path: Path = Field(default=ROOT / "data" / "hawaaz.db")
     raw_dir: Path = Field(default=ROOT / "data" / "raw")
-    demo_data: Path = Field(default=ROOT / "atompulse" / "data" / "demo_raw.json")
+    demo_data: Path = Field(default=ROOT / "hawaaz" / "data" / "demo_raw.json")
 
     # Collection (N is justified in the README: one search page = 50 results)
     youtube_api_key: str | None = None
@@ -99,8 +99,20 @@ class Settings(BaseSettings):
     llm_model: str = "llama-3.3-70b-versatile"
     llm_timeout_s: float = 30.0
 
-    # Admin token for POST /runs (collection costs API quota)
-    admin_token: str | None = None
+    # Accounts. The first admin is created at startup from these two values.
+    admin_email: str | None = None
+    admin_password: str | None = None
+    # Comma-separated email domains allowed to sign up (empty = anyone), e.g. "atomberg.com"
+    signup_domains: str = ""
+    session_days: int = Field(default=14, ge=1, le=90)
+    cookie_secure: bool = False  # set true behind HTTPS
+    # Service token for CI and automation (Authorization: Bearer ...); acts as an admin.
+    api_token: str | None = None
+
+    # Optional daily collection, local time in `timezone`, e.g. "06:30". Empty = off.
+    daily_run_at: str = ""
+    daily_run_source: str = "youtube"
+    timezone: str = "Asia/Kolkata"
 
 
 @lru_cache

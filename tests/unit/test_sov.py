@@ -2,9 +2,9 @@ import math
 
 import pytest
 
-from atompulse.config import Settings
-from atompulse.models import Comment, Mention, Video
-from atompulse.sov import compute, engagement, rank_weight
+from hawaaz.config import Settings
+from hawaaz.models import Comment, Mention, Video
+from hawaaz.sov import compute, engagement, rank_weight
 
 S = Settings(w_mentions=0.3, w_engagement=0.4, w_positive=0.3)
 

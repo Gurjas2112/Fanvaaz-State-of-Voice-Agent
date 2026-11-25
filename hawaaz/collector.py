@@ -24,7 +24,7 @@ from .config import Settings, get_settings
 from .models import Comment, Video
 from .text import clean, hash_id, prepare
 
-log = logging.getLogger("atompulse.collector")
+log = logging.getLogger("hawaaz.collector")
 
 API = "https://www.googleapis.com/youtube/v3"
 COST = {"search": 100, "videos": 1, "commentThreads": 1}
@@ -43,7 +43,7 @@ class YouTubeCollector:
     ):
         self.s = settings or get_settings()
         if not self.s.youtube_api_key:
-            raise RuntimeError("Set ATOMPULSE_YOUTUBE_API_KEY to collect live data")
+            raise RuntimeError("Set HAWAAZ_YOUTUBE_API_KEY to collect live data")
         self.client = client or httpx.Client(timeout=20)
         self.units = 0
         self.run_dir = run_dir

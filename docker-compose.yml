@@ -6,8 +6,8 @@ services:
       - path: .env
         required: false
     volumes:
-      - atompulse-data:/app/data
+      - hawaaz-data:/app/data
     restart: unless-stopped
 
 volumes:
-  atompulse-data:
+  hawaaz-data:

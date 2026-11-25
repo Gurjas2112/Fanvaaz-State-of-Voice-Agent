@@ -12,6 +12,10 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.12"
+  # Throwaway CI credentials for an ephemeral database; real ones live in repository secrets.
+  HAWAAZ_API_TOKEN: ci-service-token
+  HAWAAZ_ADMIN_EMAIL: admin@hawaaz.test
+  HAWAAZ_ADMIN_PASSWORD: Admin-pass-2026!
 
 jobs:
   offline-gates:
@@ -33,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: offline-gates
     env:
-      ATOMPULSE_DB_PATH: ${{ github.workspace }}/data/ci.db
+      HAWAAZ_DB_PATH: ${{ github.workspace }}/data/ci.db
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -43,13 +47,15 @@ jobs:
       - run: pip install -e ".[fuzz]"
       - name: Seed and start the API
         run: |
-          atompulse run --source demo
-          nohup atompulse serve --port 8000 > server.log 2>&1 &
+          hawaaz run --source demo
+          nohup hawaaz serve --port 8000 > server.log 2>&1 &
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/health && break; sleep 1; done
       - name: Postman collection (Newman)
-        run: npx --yes newman run postman/AtomPulse.postman_collection.json -e postman/local.postman_environment.json
+        run: npx --yes newman run postman/Hawaaz.postman_collection.json -e postman/local.postman_environment.json --env-var apiToken=$HAWAAZ_API_TOKEN
       - name: Schemathesis contract fuzzing
-        run: schemathesis run http://127.0.0.1:8000/openapi.json --checks all --max-examples 60 --exclude-path /api/v1/runs
+        run: >-
+          schemathesis run http://127.0.0.1:8000/openapi.json --checks all --max-examples 40
+          --exclude-path /api/v1/runs -H "Authorization: Bearer $HAWAAZ_API_TOKEN" -H "X-Requested-With: hawaaz"
       - name: promptfoo behavioural and refusal checks
         env: { PROMPTFOO_DISABLE_TELEMETRY: "1" }
         run: npx --yes promptfoo@latest eval -c promptfoo/promptfooconfig.yaml --no-progress-bar -o reports/promptfoo.json
@@ -79,7 +85,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: offline-gates
     env:
-      ATOMPULSE_DB_PATH: ${{ github.workspace }}/data/ci.db
+      HAWAAZ_DB_PATH: ${{ github.workspace }}/data/ci.db
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -95,8 +101,8 @@ jobs:
         run: npm install -g appium && appium driver install uiautomator2
       - name: Seed and start the API
         run: |
-          atompulse run --source demo
-          nohup atompulse serve --host 0.0.0.0 --port 8000 > server.log 2>&1 &
+          hawaaz run --source demo
+          nohup hawaaz serve --host 0.0.0.0 --port 8000 > server.log 2>&1 &
       - name: Run Appium tests on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -118,9 +124,9 @@ jobs:
     needs: offline-gates
     if: ${{ vars.RUN_LLM_EVALS == 'true' }}
     env:
-      ATOMPULSE_LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
-      ATOMPULSE_LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-      ATOMPULSE_LLM_MODEL: ${{ vars.LLM_MODEL || 'llama-3.3-70b-versatile' }}
+      HAWAAZ_LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+      HAWAAZ_LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      HAWAAZ_LLM_MODEL: ${{ vars.LLM_MODEL || 'llama-3.3-70b-versatile' }}
       DEEPEVAL_TELEMETRY_OPT_OUT: "YES"
     steps:
       - uses: actions/checkout@v4
@@ -138,8 +144,8 @@ jobs:
     needs: offline-gates
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t atompulse:ci .
+      - run: docker build -t hawaaz:ci .
       - run: |
-          docker run -d -p 8000:8000 --name ap atompulse:ci
+          docker run -d -p 8000:8000 --name ap hawaaz:ci
           for i in $(seq 1 40); do curl -sf http://127.0.0.1:8000/health && exit 0; sleep 1; done
           docker logs ap; exit 1

@@ -1,6 +1,6 @@
 import pytest
 
-from atompulse.brands import brands_in, find_spans
+from hawaaz.brands import brands_in, find_spans
 
 
 @pytest.mark.parametrize(

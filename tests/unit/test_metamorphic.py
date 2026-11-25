@@ -6,10 +6,10 @@ import random
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from atompulse.config import Settings
-from atompulse.extract import extract_all, label_text
-from atompulse.models import Comment, Video
-from atompulse.sov import compute
+from hawaaz.config import Settings
+from hawaaz.extract import extract_all, label_text
+from hawaaz.models import Comment, Video
+from hawaaz.sov import compute
 
 S = Settings()
 BRANDS = ["Atomberg", "Havells", "Crompton", "Orient", "Usha"]

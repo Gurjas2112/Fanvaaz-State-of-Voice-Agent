@@ -1,4 +1,4 @@
-# AtomPulse: Atomberg's Share of Voice on YouTube
+# Hawaaz: Atomberg's Share of Voice on YouTube
 
 ## Page 1: How it works
 
@@ -21,10 +21,10 @@
 | NLP | Rule-based brand matcher (aliases, Hindi script); brand-targeted sentiment for English + Hinglish with comparatives, negation and contrast; optional LLM relabelling (any OpenAI-compatible model) |
 | Risk radar | Safety, legal/consumer, product and service-failure flags per brand, scored by weight and likes, with evidence; CSV export for Tableau / Power BI (adapted from our CRIF hackathon project) |
 | Safety | PII redaction at ingestion; prompt-injection quarantine for comments; question guardrails; numeric grounding check on every LLM output |
-| Serving | FastAPI (OpenAPI), SQLite, responsive dashboard, Docker |
+| Product | Landing, sign-up/sign-in with roles, daily brief with change since the last run, reply inbox, admin panel; FastAPI (OpenAPI), SQLite, Docker |
 | Quality | pytest + Hypothesis, golden sets, DeepEval, Ragas, promptfoo, Postman/Newman, Schemathesis, Playwright, Appium, k6, GitHub Actions |
 
-**Links:** code https://github.com/Gurjas2112/AtomPulse · live demo <add your deployed URL>
+**Links:** code https://github.com/Gurjas2112/Hawaaz · live demo <add your deployed URL>
 
 **Measured quality**
 
@@ -35,13 +35,13 @@
 | Red-team questions blocked | 40/40 |
 | Benign questions wrongly refused | 0/30 |
 | promptfoo behaviour + refusal checks | 11/11 pass |
-| API p95 latency under k6 load (55 req/s) | 6.9 ms |
+| API p95 latency under k6 load (55 req/s) | 7.7 ms |
 
 ## Page 2: Findings and recommendations
 
-> **TEMPLATE ONLY: the numbers below come from the synthetic demo dataset, not YouTube.** Run `atompulse run --source youtube` and re-run this script before submitting.
+> **TEMPLATE ONLY: the numbers below come from the synthetic demo dataset, not YouTube.** Run `hawaaz run --source youtube` and re-run this script before submitting.
 
-Run `20261125T080758-010355` · 300 result slots · 5640 comments · source: synthetic-demo
+Run `20261125T085514-e0d761` · 300 result slots · 5640 comments · source: synthetic-demo
 
 | Keyword | Atomberg SoV | Rank | Leader (SoV) | Atomberg positive share |
 | --- | --- | --- | --- | --- |

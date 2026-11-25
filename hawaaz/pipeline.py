@@ -16,7 +16,7 @@ from .models import RunInfo
 from .sov import by_keyword
 from .store import Store
 
-log = logging.getLogger("atompulse.pipeline")
+log = logging.getLogger("hawaaz.pipeline")
 
 
 def run(

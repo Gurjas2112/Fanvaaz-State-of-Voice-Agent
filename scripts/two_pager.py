@@ -4,7 +4,7 @@ Page 1: tech stack, tools, links, quality results (read from reports/*.json).
 Page 2: findings and recommendations (read from the latest stored run).
 
 If the latest run is the synthetic demo, page 2 is stamped as a template so it
-cannot be submitted by mistake. Run `atompulse run --source youtube` first.
+cannot be submitted by mistake. Run `hawaaz run --source youtube` first.
 """
 
 from __future__ import annotations
@@ -12,13 +12,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from atompulse.config import DEFAULT_KEYWORDS, FOCUS_BRAND, get_settings
-from atompulse.store import Store
+from hawaaz.config import DEFAULT_KEYWORDS, FOCUS_BRAND, get_settings
+from hawaaz.store import Store
 
 ROOT = Path(__file__).resolve().parent.parent
 REPORTS = ROOT / "reports"
 OUT = ROOT / "docs" / "TWO_PAGER.md"
-REPO_URL = "https://github.com/Gurjas2112/AtomPulse"  # update after pushing
+REPO_URL = "https://github.com/Gurjas2112/Hawaaz"  # update after pushing
 DEMO_URL = "<add your deployed URL>"
 
 
@@ -69,13 +69,13 @@ def main() -> None:
     st = Store(s.db_path)
     run = st.latest_run()
     if not run:
-        raise SystemExit("No runs yet. atompulse run --source youtube")
+        raise SystemExit("No runs yet. hawaaz run --source youtube")
     reports = {k: st.report(run.run_id, k) for k in st.keywords(run.run_id)}
     insights = st.insights(run.run_id)
     demo = run.source == "synthetic-demo"
 
     lines = [
-        "# AtomPulse: Atomberg's Share of Voice on YouTube",
+        "# Hawaaz: Atomberg's Share of Voice on YouTube",
         "",
         "## Page 1: How it works",
         "",
@@ -106,7 +106,8 @@ def main() -> None:
         "likes, with evidence; CSV export for Tableau / Power BI (adapted from our CRIF hackathon project) |",
         "| Safety | PII redaction at ingestion; prompt-injection quarantine for comments; question guardrails; "
         "numeric grounding check on every LLM output |",
-        "| Serving | FastAPI (OpenAPI), SQLite, responsive dashboard, Docker |",
+        "| Product | Landing, sign-up/sign-in with roles, daily brief with change since the last run, reply inbox, "
+        "admin panel; FastAPI (OpenAPI), SQLite, Docker |",
         "| Quality | pytest + Hypothesis, golden sets, DeepEval, Ragas, promptfoo, Postman/Newman, Schemathesis, "
         "Playwright, Appium, k6, GitHub Actions |",
         "",
@@ -121,7 +122,7 @@ def main() -> None:
     if demo:
         lines += [
             "> **TEMPLATE ONLY: the numbers below come from the synthetic demo dataset, not YouTube.** "
-            "Run `atompulse run --source youtube` and re-run this script before submitting.",
+            "Run `hawaaz run --source youtube` and re-run this script before submitting.",
             "",
         ]
     lines += [

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hawaaz: hear what India says about your fans</title>
+  <meta name="description" content="Hawaaz measures Atomberg's share of the YouTube conversation every morning and lists the comments that need a reply.">
+  <link rel="preload" href="/static/fonts/bricolage-grotesque-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/hz.css">
+</head>
+<body>
+  <header class="wrap bar">
+    <a class="logo" href="/" data-mark>Hawaaz</a>
+    <div class="who">
+      <a class="btn ghost small" href="/login" data-testid="nav-signin">Sign in</a>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <div>
+        <h1>Hear what India says about your fans.</h1>
+        <p class="lede">Every morning Hawaaz reads the top YouTube results for smart fans, measures how much of the
+          conversation belongs to Atomberg, and lines up the comments that need a reply.</p>
+        <div class="actions">
+          <a class="btn" href="/signup" data-testid="cta-signup">Create an account</a>
+          <a class="btn ghost" href="/login" data-testid="cta-signin">Sign in</a>
+        </div>
+      </div>
+      <figure class="fan" id="hero-fan" data-testid="hero-fan">
+      </figure>
+    </section>
+
+    <section class="morning" aria-labelledby="morning-title">
+      <h2 id="morning-title">Your first ten minutes, every day</h2>
+      <ol class="steps">
+        <li>
+          <h3>Read one sentence</h3>
+          <p>How loud Atomberg is against nine rivals, and how that moved since yesterday, across six search terms buyers use.</p>
+        </li>
+        <li>
+          <h3>Clear the reply inbox</h3>
+          <p>Sparking fans, consumer-court threats and dead motors come first, each with the exact words that triggered it.</p>
+        </li>
+        <li>
+          <h3>Ask what you need</h3>
+          <p>"Why do people complain about the remote?" Answers quote real comments and only use numbers from the data.</p>
+        </li>
+      </ol>
+    </section>
+
+    <p class="name-note">Hawaaz comes from <em>hawa</em>, air, and <em>awaaz</em>, voice: the voice of the people your fans keep cool.
+      Data from the YouTube Data API. Personal details in comments are removed before anything is stored.</p>
+  </main>
+  <script src="/static/hz.js"></script>
+  <script src="/static/landing.js"></script>
+</body>
+</html>

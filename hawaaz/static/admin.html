@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hawaaz admin</title>
+  <link rel="preload" href="/static/fonts/bricolage-grotesque-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/hz.css">
+</head>
+<body>
+  <header class="wrap bar">
+    <a class="logo" href="/app" data-mark>Hawaaz</a>
+    <nav aria-label="Sections">
+      <a href="/app">Today</a>
+      <a href="/admin" aria-current="page">Admin</a>
+    </nav>
+    <div class="who">
+      <span id="user-name" data-testid="user-name"></span>
+      <button class="btn ghost small" id="signout" data-testid="signout" type="button">Sign out</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="today">
+      <h1 class="sentence">Admin</h1>
+    </section>
+
+    <section class="panel" aria-labelledby="collect-title" data-testid="collect-panel">
+      <h2 id="collect-title">Collect data</h2>
+      <p class="sub" id="collect-note">A YouTube collection reads 6 search terms, 50 videos each, and uses about 906 of the 10,000 free daily API units.</p>
+      <div class="inbox-tools">
+        <button class="btn" type="button" id="run-youtube" data-testid="run-youtube">Collect from YouTube now</button>
+        <button class="btn ghost" type="button" id="run-demo" data-testid="run-demo">Load demo data</button>
+      </div>
+      <p class="error" id="run-error" role="alert" data-testid="run-error"></p>
+      <div class="table-wrap">
+        <table class="grid" data-testid="runs-table">
+          <thead><tr><th>Collected</th><th>Source</th><th>Videos</th><th>Comments</th><th>API units</th></tr></thead>
+          <tbody id="runs"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="people-title" data-testid="people-panel">
+      <h2 id="people-title">People</h2>
+      <p class="sub" id="people-note">Analysts read reports, work the reply inbox and ask questions. Admins also manage people and data runs.</p>
+      <div class="table-wrap">
+        <table class="grid" data-testid="users-table">
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Access</th><th>Last sign-in</th><th><span class="visually-hidden">Password</span></th></tr></thead>
+          <tbody id="users"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="system-title" data-testid="system-panel">
+      <h2 id="system-title">Setup</h2>
+      <dl class="facts-list" id="system"></dl>
+    </section>
+  </main>
+  <script src="/static/hz.js"></script>
+  <script src="/static/admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in to Hawaaz</title>
+  <link rel="preload" href="/static/fonts/bricolage-grotesque-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/hz.css">
+</head>
+<body>
+  <div class="auth">
+    <aside class="side">
+      <a class="logo" href="/" data-mark>Hawaaz</a>
+      <figure class="fan" id="side-fan"></figure>
+      <p>Today's share of voice and the comments that need a reply are one sign-in away.</p>
+    </aside>
+    <main>
+      <form id="login-form" novalidate data-testid="login-form">
+        <h1>Sign in</h1>
+        <div class="field">
+          <label for="email">Work email</label>
+          <input id="email" name="email" type="email" autocomplete="username" required data-testid="login-email">
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required data-testid="login-password">
+        </div>
+        <p class="error" id="form-error" role="alert" data-testid="login-error"></p>
+        <button class="btn" type="submit" data-testid="login-submit">Sign in</button>
+        <p class="switch">New to Hawaaz? <a href="/signup">Create an account</a>. Forgot your password? Ask your Hawaaz admin to reset it.</p>
+      </form>
+    </main>
+  </div>
+  <script src="/static/hz.js"></script>
+  <script src="/static/auth.js"></script>
+</body>
+</html>

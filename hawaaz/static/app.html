@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hawaaz: today</title>
+  <link rel="preload" href="/static/fonts/bricolage-grotesque-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/hz.css">
+</head>
+<body>
+  <div id="demo-banner" class="banner" data-testid="demo-banner" hidden>
+    <div class="wrap">You are looking at synthetic demo data, not real YouTube results. An admin can collect live data from the admin page.</div>
+  </div>
+  <header class="wrap bar">
+    <a class="logo" href="/app" data-mark>Hawaaz</a>
+    <nav aria-label="Sections">
+      <a href="#today" aria-current="page">Today</a>
+      <a href="#voice">Voice</a>
+      <a href="#replies">Replies</a>
+      <a href="#plan">This week</a>
+      <a href="#ask">Ask</a>
+    </nav>
+    <div class="who">
+      <span id="user-name" data-testid="user-name"></span>
+      <a id="admin-link" href="/admin" data-testid="admin-link" hidden>Admin</a>
+      <button class="btn ghost small" id="signout" data-testid="signout" type="button">Sign out</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section id="today" class="today" aria-live="polite">
+      <h1 class="visually-hidden">Today</h1>
+      <p class="sentence" id="brief-sentence" data-testid="brief-sentence">Reading this morning's conversation…</p>
+      <div class="facts">
+        <div class="fact"><div class="v" id="fact-sov" data-testid="fact-sov">–</div><div class="k">Atomberg's share of voice</div></div>
+        <div class="fact"><div class="v" id="fact-delta" data-testid="fact-delta">–</div><div class="k">Change since the last run</div></div>
+        <div class="fact"><div class="v" id="fact-rank" data-testid="fact-rank">–</div><div class="k">Rank among brands</div></div>
+        <div class="fact"><div class="v" id="fact-replies" data-testid="fact-replies">–</div><div class="k">Comments waiting for a reply</div></div>
+      </div>
+      <div class="next" id="next-action" data-testid="next-action" hidden></div>
+    </section>
+
+    <section id="voice" class="panel" aria-labelledby="voice-title">
+      <h2 id="voice-title">Share of voice</h2>
+      <p class="sub">Mentions, engagement and positive comments across the top 50 YouTube results, weighted by search rank.</p>
+      <div class="pills" id="keyword-pills" role="group" aria-label="Search term" data-testid="keyword-pills"></div>
+      <div class="voice">
+        <figure class="fan" id="sov-fan" data-testid="sov-fan"></figure>
+        <div>
+          <ol class="rank" id="rank-list" data-testid="rank-list"></ol>
+          <p class="breakdown" id="breakdown" data-testid="breakdown"></p>
+        </div>
+      </div>
+    </section>
+
+    <section id="replies" class="panel" aria-labelledby="replies-title">
+      <h2 id="replies-title">Reply inbox</h2>
+      <p class="sub">Comments about safety, legal threats, product failures or poor service, most urgent first. Mark them handled once someone has replied; the status carries over to tomorrow's run.</p>
+      <div class="inbox-tools">
+        <div class="pills" id="status-pills" role="group" aria-label="Status" data-testid="status-pills"></div>
+        <label class="visually-hidden" for="inbox-brand">Brand</label>
+        <select class="input" id="inbox-brand" data-testid="inbox-brand"></select>
+      </div>
+      <ul class="inbox" id="inbox" data-testid="inbox"></ul>
+      <button class="btn ghost small more" type="button" id="inbox-more" data-testid="inbox-more" hidden>Show 8 more</button>
+    </section>
+
+    <section id="plan" class="panel" aria-labelledby="plan-title">
+      <h2 id="plan-title">What to do this week</h2>
+      <p class="sub">Recommendations for the content and marketing team. Every number comes from this run's data.</p>
+      <ol class="recs" id="recs" data-testid="recs"></ol>
+    </section>
+
+    <section id="ask" class="panel" aria-labelledby="ask-title">
+      <h2 id="ask-title">Ask the data</h2>
+      <p class="sub">Questions about brands, keywords, complaints or praise. Answers quote viewers and only use numbers from the data.</p>
+      <form id="ask-form" class="ask">
+        <label class="visually-hidden" for="ask-input">Question</label>
+        <input id="ask-input" data-testid="ask-input" maxlength="500" placeholder="Why do people complain about the Atomberg remote?">
+        <button class="btn" type="submit" data-testid="ask-submit">Ask</button>
+      </form>
+      <div id="ask-answer" class="answer" data-testid="ask-answer" aria-live="polite"></div>
+      <ul id="ask-sources" class="sources" data-testid="ask-sources"></ul>
+    </section>
+  </main>
+
+  <footer class="wrap foot">
+    <span id="run-meta" data-testid="run-meta"></span>
+    <p>Download for Tableau, Power BI or Excel:
+      <a href="/api/v1/export/sov.csv" data-testid="export-sov">share of voice</a>
+      <a href="/api/v1/export/risks.csv" data-testid="export-risks">reply inbox</a>
+      <a href="/api/v1/export/mentions.csv" data-testid="export-mentions">all mentions</a></p>
+  </footer>
+  <script src="/static/hz.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

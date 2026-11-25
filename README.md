@@ -1,8 +1,11 @@
-# AtomPulse
+# Hawaaz
 
-**Share of Voice for Atomberg on YouTube, and a test harness that grades the AI that measures it.**
+**Hear what India says about your fans.** Atomberg's daily YouTube Share of Voice desk, with a reply inbox for
+risky comments, and a test harness that grades the AI behind it.
 
-AtomPulse searches YouTube for "smart fan" and five related keywords, reads the top 50 videos and their top
+*Hawaaz* = *hawa* (air) + *awaaz* (voice): the voice of the people your fans keep cool.
+
+Hawaaz searches YouTube for "smart fan" and five related keywords, reads the top 50 videos and their top
 comments, finds every fan-brand mention, scores the sentiment aimed at each brand (English and Hinglish), and
 reports Atomberg's Share of Voice against nine competitors. It then writes evidence-backed recommendations for the
 content and marketing team, and lets them ask follow-up questions in plain language.
@@ -11,10 +14,12 @@ Every stage is guarded and gated in CI: golden-set accuracy, metamorphic propert
 (DeepEval, Ragas), red-team refusal (promptfoo), API contract (Postman/Newman, Schemathesis), web E2E
 (Playwright), Android (Appium) and load (k6).
 
-![Dashboard](docs/screenshots/dashboard_desktop.png)
+| Landing | Today (signed in) | Admin |
+| --- | --- | --- |
+| ![Landing](docs/screenshots/landing.png) | ![App](docs/screenshots/app.png) | ![Admin](docs/screenshots/admin.png) |
 
-> The screenshot and all numbers under "Demo output" use the bundled **synthetic** dataset so everything runs with
-> no keys. Run a live collection (below) for real findings.
+> Screenshots use the bundled **synthetic** dataset so everything runs with no keys; the app shows a banner saying
+> so. Run a live collection (below) for real findings.
 
 ---
 
@@ -22,22 +27,65 @@ Every stage is guarded and gated in CI: golden-set accuracy, metamorphic propert
 
 ```bash
 pip install -e ".[dev]"
-atompulse run --source demo        # seed from the bundled synthetic dataset (no keys, no network)
-atompulse serve                    # http://127.0.0.1:8000  (API docs at /docs)
+export HAWAAZ_ADMIN_EMAIL=you@example.com HAWAAZ_ADMIN_PASSWORD='choose-a-long-passphrase'
+hawaaz run --source demo           # seed from the bundled synthetic dataset (no keys, no network)
+hawaaz serve                       # http://127.0.0.1:8000 -> sign in at /login (API docs at /docs)
 pytest -m "not mobile and not llm" # every offline gate + Playwright
 ```
 
 Live data (needs a free YouTube Data API v3 key):
 
 ```bash
-cp .env.example .env               # set ATOMPULSE_YOUTUBE_API_KEY (and optionally an LLM)
-atompulse run --source youtube     # ~906 of the 10,000 free daily quota units
+cp .env.example .env               # set HAWAAZ_YOUTUBE_API_KEY (and optionally an LLM)
+hawaaz run --source youtube     # ~906 of the 10,000 free daily quota units
 python scripts/two_pager.py        # writes docs/TWO_PAGER.md for the submission
 ```
 
 Docker: `docker compose up --build` (seeds a demo run on first boot, serves on :8000).
 
 ---
+
+## The product
+
+| Page | Who | What it is for |
+| --- | --- | --- |
+| `/` | anyone | What Hawaaz does, with an example share-of-voice fan; sign in or create an account |
+| `/signup`, `/login` | anyone | Accounts; sign-up can be limited to company domains (`HAWAAZ_SIGNUP_DOMAINS=atomberg.com`) |
+| `/app` | analysts, admins | **Today**: one-sentence brief with change since the last run · **Voice**: the fan chart and ranking per search term · **Reply inbox**: risk comments to mark handled or dismissed (status carries over to later runs) · **This week**: recommendations · **Ask**: guarded Q&A · CSV downloads |
+| `/admin` | admins | Collect from YouTube or load demo data, run history and API units, people (role, access, password reset), setup status |
+
+No other pages: password reset is done by an admin (no email service needed), and settings live in environment
+variables shown on the admin page.
+
+**Designed for daily use.** The first screen is one sentence ("Atomberg holds 28.7% of the conversation, #1 of 10,
+up 1.2 pts since the last run. 24 safety comments are waiting for a reply."), then the inbox. With
+`HAWAAZ_DAILY_RUN_AT=06:30` a fresh collection lands every morning; a date-keyed claim row stops two workers
+collecting twice.
+
+**Visual identity.** The share of voice is drawn as a ceiling fan: one swept blade per brand, its length growing
+with the square root of the share (so blade *area* stays honest), Atomberg in breeze teal `#0F8B8D`. It spins once
+on load and stays still under `prefers-reduced-motion`. Type is Bricolage Grotesque for headlines and Atkinson
+Hyperlegible for reading, both self-hosted (SIL OFL), so the pages make no third-party requests.
+
+### Accounts and security
+
+| Control | Implementation |
+| --- | --- |
+| Passwords | scrypt (n=2^14, r=8, p=1), per-user salt, constant-time compare; min 10 characters, common-password list |
+| Sessions | 32-byte random token in an `HttpOnly`, `SameSite=Lax` cookie (`Secure` behind HTTPS); only its SHA-256 is stored; revoked on logout, deactivation or password reset |
+| CSRF | cookie-authenticated writes need `X-Requested-With: hawaaz`; no CORS is allowed |
+| Brute force | 5 failed sign-ins per email per 15 minutes → 429; same message and work for unknown emails |
+| Roles | `analyst` (read, triage, ask) and `admin` (people, runs); the last active admin cannot be removed, and admins cannot demote themselves |
+| Automation | `Authorization: Bearer $HAWAAZ_API_TOKEN` for CI tools (Newman, promptfoo, Schemathesis, k6) |
+| Requests | strict bodies: no type coercion (`"active": 0` is rejected) and no unknown fields |
+| Pages | CSP `default-src 'self'` (no inline script), `X-Frame-Options: DENY`, `nosniff`, open-redirect-safe `?next=` |
+
+### MCP servers: none added, on purpose
+
+The problem statement needs an agent and a two-pager; the role needs test automation and LLM evaluation. Hawaaz
+already calls the official YouTube Data API directly, so a community YouTube MCP server would wrap the same API and
+add a dependency without adding capability. Exposing Hawaaz itself as an MCP server would be optional, so it is
+left out.
 
 ## How it works
 
@@ -79,7 +127,7 @@ team's [CRIF India hackathon project](https://github.com/Gurjas2112/CRIF-Hackath
 Score = sum of the comment's category weights (each once) + 10 if the brand mention is negative, then multiplied by
 `1 + log10(1 + likes) / 2`, because a liked complaint reaches more buyers. High at 60 or any safety flag, medium at 30.
 
-| CRIF approach | Problem for this use | AtomPulse |
+| CRIF approach | Problem for this use | Hawaaz |
 | --- | --- | --- |
 | Any token in a 4,472-word negative list adds +10 | "no noise" and "not bad" counted as negative | negation-aware terms; sentiment from the brand-targeted engine |
 | Whole article scored | every brand in it shares the blame | risk goes to the nearest brand in the clause ("Havells caught fire, switched to Atomberg" flags Havells) |
@@ -113,18 +161,18 @@ keyword, ≈ 906 for six keywords against a 10,000-unit free daily quota, so the
 
 | Gate | Tool | Threshold | Measured (this repo, demo data) |
 | --- | --- | --- | --- |
-| Unit + collector (mocked YouTube) + risk rules | pytest, httpx MockTransport | all pass | pass (123 tests in total incl. E2E; 1 documented xfail) |
+| Unit, collector (mocked YouTube), risk rules, auth | pytest, httpx MockTransport | all pass | pass (**165 tests** incl. E2E; 1 documented xfail) |
 | Metamorphic properties | Hypothesis | 0 violations | comment order, brand-less comments, alias spelling, antisymmetric comparatives: all hold |
 | Brand detection | golden **holdout**, 50 comments / 59 brand pairs | F1 ≥ 0.95 | **F1 1.00** |
 | Brand-targeted sentiment, rules only | golden **holdout** | macro-F1 ≥ 0.80 | **macro-F1 0.84** (dev set: 0.99) |
 | Red-team refusal | own corpus, 40 attacks / 30 benign | ≥ 95% blocked, ≤ 5% false refusals | **40/40 blocked, 0/30 false refusals** |
 | LLM guard paths | fake LLMs that lie, leak PII, invent brands | must be rejected | all rejected |
 | promptfoo | behaviour + refusal on live `/ask` | all pass | **11/11** |
-| API contract | Postman + Newman | all pass | **37/37 assertions, 12 requests** |
-| API fuzzing | Schemathesis (OpenAPI) | 0 failures | **388/388** after fixing 2 findings (below) |
-| Web E2E | Playwright | all pass | **8/8**, incl. XSS, mobile layout and risk radar |
+| API contract | Postman + Newman | all pass | **58/58 assertions, 25 requests** incl. sign-up, cookie session, CSRF, roles |
+| API fuzzing | Schemathesis (OpenAPI, stateful) | 0 failures | **4,689 cases over 5 seeds, 0 failures** after fixing 7 findings (below) |
+| Web E2E | Playwright | all pass | **18/18**: landing, sign-up/sign-in errors, open redirect, brief, inbox triage, admin, roles, XSS, phone layout |
 | CSV export safety | pytest | formulas neutralised | `=`, `+`, `-`, `@` cells prefixed with `'` |
-| Load | k6, 55 req/s for 60 s | p95 < 500 ms, < 1% errors | **3,302 requests, 0 errors, p95 6.2 ms (reads), 8.5 ms (ask)**, 1 worker, laptop-class box |
+| Load | k6, 55 req/s for 60 s, authenticated | p95 < 500 ms, < 1% errors | **3,301 requests, 0 errors, p95 7.1 ms (reads), 9.5 ms (ask)**, 1 worker |
 | Faithfulness / hallucination | DeepEval, Ragas | faithfulness ≥ 0.8 | needs an LLM key: `make llm-evals` |
 | Android | Appium (UiAutomator2, Chrome) | all pass | runs in CI on an emulator: `mobile-appium` job |
 
@@ -137,6 +185,14 @@ one person; add real labelled comments from a live run before trusting decimals.
 
 **What the harness caught while building it**
 
+- **Schemathesis, after adding accounts, found 7 real defects**: a user id of 2^63 crashed the server (SQLite
+  overflow, 500); `"active": 0` was silently coerced to `false` and deactivated an admin; password reset re-validated
+  the stored email, so older accounts could never be reset; Python's and JSON Schema's `\s` disagree on `\x1f` and
+  `\x85`, so client and server disagreed on valid emails (twice); my own 422s used a string where FastAPI's 422
+  schema promises a list; and sign-up could return an undocumented 429 through the login throttle. Each now has a
+  regression test.
+- **Playwright** caught stacked toasts after two quick actions, and the header overflowing a 390 px phone.
+- **Screenshots** caught two CSS padding clashes (`.wrap` vs `.bar`/`.foot`) that pinned content to the phone's edge.
 - **Schemathesis** found that `/sov` returned 404 and `/ask` returned 400 on malformed JSON, neither documented in
   the OpenAPI spec. Both are now declared.
 - **Playwright** found the dashboard was 588 px wide on a 390 px phone (a grid item would not shrink). Fixed.
@@ -167,21 +223,27 @@ Reports land in `reports/` (golden, safety, promptfoo, k6, DeepEval, Ragas) and 
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| GET | `/health` | status, version, data present, LLM configured |
+| GET | `/health` | status, version, data present, LLM configured (public) |
+| POST | `/api/v1/auth/signup` · `/login` · `/logout` | accounts and cookie sessions |
+| GET | `/api/v1/auth/me` | the signed-in user |
+| GET | `/api/v1/brief` | one-sentence brief, change since the previous run, open replies |
+| PATCH | `/api/v1/risks/status` | mark a flagged comment handled, dismissed or open |
+| GET / PATCH | `/api/v1/admin/users[/{id}]` | people, roles, access, password reset (admins) |
+| GET | `/api/v1/admin/runs` · `/admin/system` | run history and setup status (admins) |
 | GET | `/api/v1/keywords` | `all` + each keyword in the latest run |
 | GET | `/api/v1/sov?keyword=` | brands sorted by SoV with M, E, P, net sentiment |
 | GET | `/api/v1/insights` | insights and recommendations with evidence |
 | GET | `/api/v1/risks?brand=&severity=&limit=` | risk flags with evidence, per-brand summary |
 | GET | `/api/v1/export/{sov,risks,mentions}.csv` | flat CSVs for Tableau / Power BI |
 | POST | `/api/v1/ask` | `{question}` → grounded answer, sources, refusal flag |
-| POST | `/api/v1/runs` | new collection; needs `X-Admin-Token` |
+| POST | `/api/v1/runs` | new collection (admins) |
 
 ---
 
 ## Configuration
 
-All settings are environment variables with the `ATOMPULSE_` prefix (see `.env.example`). The LLM is optional; any
-OpenAI-compatible endpoint works (Groq, Gemini, OpenAI, Ollama). Without one, AtomPulse runs fully on rules.
+All settings are environment variables with the `HAWAAZ_` prefix (see `.env.example`). The LLM is optional; any
+OpenAI-compatible endpoint works (Groq, Gemini, OpenAI, Ollama). Without one, Hawaaz runs fully on rules.
 
 ## Limitations
 
@@ -195,7 +257,8 @@ OpenAI-compatible endpoint works (Groq, Gemini, OpenAI, Ollama). Without one, At
 ## Project layout
 
 ```
-atompulse/      collector, brands, sentiment, extract, sov, risk, insights, ask, guardrails, store, api, static/
+hawaaz/         collector, brands, sentiment, extract, sov, risk, insights, ask, guardrails, brief, auth,
+                scheduler, store, api, static/ (pages, hz.css, hz.js fan chart, self-hosted fonts)
 tests/          unit/ (incl. metamorphic), golden/, api/, safety/, e2e/, mobile/, llm/
 postman/        Newman collection + environment
 promptfoo/      behavioural checks + generated red team

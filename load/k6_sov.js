@@ -4,6 +4,7 @@ import http from "k6/http";
 import { check } from "k6";
 
 const BASE = __ENV.BASE_URL || "http://127.0.0.1:8000";
+const AUTH = { Authorization: `Bearer ${__ENV.HAWAAZ_API_TOKEN || "local-service-token"}` };
 const KEYWORDS = ["all", "smart fan", "BLDC fan", "energy saving fan"];
 
 export const options = {
@@ -22,12 +23,12 @@ export const options = {
 
 export function reads() {
   const kw = KEYWORDS[Math.floor(Math.random() * KEYWORDS.length)];
-  const r = http.get(`${BASE}/api/v1/sov?keyword=${encodeURIComponent(kw)}`);
+  const r = http.get(`${BASE}/api/v1/sov?keyword=${encodeURIComponent(kw)}`, { headers: AUTH });
   check(r, { "200": (res) => res.status === 200, "has brands": (res) => res.json("report.brands").length > 0 });
 }
 
 export function asks() {
   const r = http.post(`${BASE}/api/v1/ask`, JSON.stringify({ question: "Why do people complain about Atomberg?" }),
-    { headers: { "Content-Type": "application/json" } });
+    { headers: { "Content-Type": "application/json", ...AUTH } });
   check(r, { "200": (res) => res.status === 200, "not refused": (res) => res.json("refused") === false });
 }

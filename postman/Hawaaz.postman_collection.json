@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "AtomPulse API",
-    "description": "Contract tests for the AtomPulse API. Run: newman run postman/AtomPulse.postman_collection.json -e postman/local.postman_environment.json",
+    "name": "Hawaaz API",
+    "description": "Contract tests for the Hawaaz API. Run: newman run postman/Hawaaz.postman_collection.json -e postman/local.postman_environment.json",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -329,20 +329,319 @@
       ]
     },
     {
-      "name": "Runs - no token is 401",
+      "name": "Runs - anonymous is 401",
       "request": {
         "method": "POST",
         "header": [
           {
             "key": "Content-Type",
             "value": "application/json"
+          },
+          {
+            "key": "X-Requested-With",
+            "value": "hawaaz"
           }
         ],
         "url": "{{baseUrl}}/api/v1/runs",
         "body": {
           "mode": "raw",
           "raw": "{\"source\": \"demo\"}"
+        },
+        "auth": {
+          "type": "noauth"
         }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('401', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Brief - morning sentence",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/brief"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('has sentence', () => pm.expect(b.sentence).to.match(/^Atomberg holds \\d+\\.\\d% of the conversation/));",
+              "pm.test('open risks is a count', () => pm.expect(b.open_risks).to.be.a('number').and.at.least(0));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Risks - mark first open flag handled",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "pm.sendRequest({url: pm.environment.get('baseUrl') + '/api/v1/risks?brand=Atomberg&status=open&limit=1', header: {Authorization: 'Bearer ' + pm.environment.get('apiToken')}}, (e, r) => {",
+              "  const f = r.json().flags[0]; pm.collectionVariables.set('cid', f.comment_id); });"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('status recorded', () => pm.expect(pm.response.json().status).to.eql('handled'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Requested-With",
+            "value": "hawaaz"
+          }
+        ],
+        "url": "{{baseUrl}}/api/v1/risks/status",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"comment_id\": \"{{cid}}\", \"brand\": \"Atomberg\", \"status\": \"handled\", \"note\": \"newman\"}"
+        }
+      }
+    },
+    {
+      "name": "Risks - handled filter includes it",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/risks?brand=Atomberg&status=handled&limit=1000"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('found', () => pm.expect(pm.response.json().flags.map(f => f.comment_id)).to.include(pm.collectionVariables.get('cid')));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - users",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/admin/users"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('an admin exists', () => pm.expect(pm.response.json().some(u => u.role === 'admin')).to.be.true);",
+              "pm.test('no password hashes leak', () => pm.expect(pm.response.text()).to.not.include('scrypt'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - system",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/admin/system"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('quota shown', () => pm.expect(pm.response.json().daily_quota).to.eql(10000));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Data - anonymous is 401",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/sov",
+        "auth": {
+          "type": "noauth"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('401', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth - signup sets HttpOnly cookie",
+      "request": {
+        "method": "POST",
+        "auth": {
+          "type": "noauth"
+        },
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Requested-With",
+            "value": "hawaaz"
+          }
+        ],
+        "url": "{{baseUrl}}/api/v1/auth/signup",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"Newman\", \"email\": \"newman-{{$timestamp}}@example.com\", \"password\": \"newman-pass-2026\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('201', () => pm.response.to.have.status(201));",
+              "pm.test('analyst role', () => pm.expect(pm.response.json().role).to.eql('analyst'));",
+              "pm.test('cookie is HttpOnly', () => pm.expect(pm.response.headers.get('Set-Cookie')).to.include('HttpOnly'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth - me via cookie",
+      "request": {
+        "method": "GET",
+        "auth": {
+          "type": "noauth"
+        },
+        "url": "{{baseUrl}}/api/v1/auth/me"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('is the new user', () => pm.expect(pm.response.json().name).to.eql('Newman'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth - analyst cannot use admin",
+      "request": {
+        "method": "GET",
+        "auth": {
+          "type": "noauth"
+        },
+        "url": "{{baseUrl}}/api/v1/admin/users"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('403', () => pm.response.to.have.status(403));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth - cookie write without CSRF header is 403",
+      "request": {
+        "method": "POST",
+        "auth": {
+          "type": "noauth"
+        },
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/api/v1/ask",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"question\": \"Why do people like Atomberg?\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('403', () => pm.response.to.have.status(403));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth - logout",
+      "request": {
+        "method": "POST",
+        "auth": {
+          "type": "noauth"
+        },
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Requested-With",
+            "value": "hawaaz"
+          }
+        ],
+        "url": "{{baseUrl}}/api/v1/auth/logout"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('204', () => pm.response.to.have.status(204));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth - session gone after logout",
+      "request": {
+        "method": "GET",
+        "auth": {
+          "type": "noauth"
+        },
+        "url": "{{baseUrl}}/api/v1/auth/me"
       },
       "event": [
         {
@@ -360,6 +659,20 @@
     {
       "key": "keyword",
       "value": "smart fan"
+    },
+    {
+      "key": "cid",
+      "value": ""
     }
-  ]
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{apiToken}}",
+        "type": "string"
+      }
+    ]
+  }
 }

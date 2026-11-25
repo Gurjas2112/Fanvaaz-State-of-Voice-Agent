@@ -160,3 +160,63 @@ class Store:
         with self._conn() as c:
             rows = c.execute(q, (*args, limit)).fetchall()
         return [json.loads(r[0]) for r in rows]
+
+    # ---- run history and day-over-day comparison --------------------------
+    def runs(self, limit: int = 30) -> list[RunInfo]:
+        with self._conn() as c:
+            rows = c.execute("SELECT * FROM runs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+        return [
+            RunInfo(
+                run_id=r[0],
+                source=r[1],
+                created_at=r[2],
+                keywords=json.loads(r[3]),
+                videos=r[4],
+                comments=r[5],
+                quota_units_used=r[6],
+            )
+            for r in rows
+        ]
+
+    def previous_run(self, run_id: str, same_source: bool = True) -> RunInfo | None:
+        cur = next((r for r in self.runs(200) if r.run_id == run_id), None)
+        for r in self.runs(200):
+            if cur and r.created_at < cur.created_at and (not same_source or r.source == cur.source):
+                return r
+        return None
+
+    # ---- risk triage: survives across runs, keyed by comment + brand -------
+    def _ensure_triage(self, c) -> None:
+        c.execute("""CREATE TABLE IF NOT EXISTS risk_status (
+            comment_id TEXT NOT NULL, brand TEXT NOT NULL, status TEXT NOT NULL,
+            note TEXT, user_email TEXT NOT NULL, updated_at TEXT NOT NULL,
+            PRIMARY KEY (comment_id, brand))""")
+
+    def set_risk_status(
+        self, comment_id: str, brand: str, status: str, user_email: str, note: str = ""
+    ) -> dict:
+        from datetime import UTC, datetime
+
+        now = datetime.now(UTC).isoformat(timespec="seconds")
+        with self._lock, self._conn() as c:
+            self._ensure_triage(c)
+            c.execute(
+                "INSERT OR REPLACE INTO risk_status VALUES (?,?,?,?,?,?)",
+                (comment_id, brand, status, note[:300], user_email, now),
+            )
+        return {
+            "comment_id": comment_id,
+            "brand": brand,
+            "status": status,
+            "note": note[:300],
+            "updated_by": user_email,
+            "updated_at": now,
+        }
+
+    def risk_statuses(self) -> dict[tuple[str, str], dict]:
+        with self._conn() as c:
+            self._ensure_triage(c)
+            rows = c.execute("SELECT * FROM risk_status").fetchall()
+        return {
+            (r[0], r[1]): {"status": r[2], "note": r[3], "updated_by": r[4], "updated_at": r[5]} for r in rows
+        }

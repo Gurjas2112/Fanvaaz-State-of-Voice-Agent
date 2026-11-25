@@ -64,16 +64,13 @@ def test_ask_validation(client, payload):
     assert client.post("/api/v1/ask", json=payload).status_code == 422
 
 
-def test_runs_require_admin_token(client):
-    assert client.post("/api/v1/runs", json={"source": "demo"}).status_code == 401
-    assert (
-        client.post("/api/v1/runs", json={"source": "demo"}, headers={"X-Admin-Token": "wrong"}).status_code
-        == 401
-    )
+def test_runs_reject_wrong_token(client):
+    r = client.post("/api/v1/runs", json={"source": "demo"}, headers={"Authorization": "Bearer wrong"})
+    assert r.status_code == 401
 
 
 def test_runs_youtube_without_key_is_400(client):
-    r = client.post("/api/v1/runs", json={"source": "youtube"}, headers={"X-Admin-Token": "test-admin-token"})
+    r = client.post("/api/v1/runs", json={"source": "youtube"})
     assert r.status_code == 400 and "YOUTUBE_API_KEY" in r.json()["detail"]
 
 
@@ -90,9 +87,10 @@ def test_openapi_lists_every_route(client):
         assert p in paths
 
 
-def test_dashboard_served(client):
-    r = client.get("/")
-    assert r.status_code == 200 and "AtomPulse" in r.text
+def test_pages_served(client):
+    for path in ["/", "/app", "/admin"]:
+        r = client.get(path)
+        assert r.status_code == 200 and "Hawaaz" in r.text, path
     assert client.get("/static/app.js").status_code == 200
 
 

@@ -1,6 +1,6 @@
 import pytest
 
-from atompulse.text import clean, contains_pii, prepare, redact_pii
+from hawaaz.text import clean, contains_pii, prepare, redact_pii
 
 
 @pytest.mark.parametrize(

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Create a Hawaaz account</title>
+  <link rel="preload" href="/static/fonts/bricolage-grotesque-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/hz.css">
+</head>
+<body>
+  <div class="auth">
+    <aside class="side">
+      <a class="logo" href="/" data-mark>Hawaaz</a>
+      <figure class="fan" id="side-fan"></figure>
+      <p>New accounts can read every report, work the reply inbox and ask questions. Admins manage people and data runs.</p>
+    </aside>
+    <main>
+      <form id="signup-form" novalidate data-testid="signup-form">
+        <h1>Create your account</h1>
+        <div class="field">
+          <label for="name">Your name</label>
+          <input id="name" name="name" autocomplete="name" required maxlength="80" data-testid="signup-name">
+        </div>
+        <div class="field">
+          <label for="email">Work email</label>
+          <input id="email" name="email" type="email" autocomplete="email" required data-testid="signup-email">
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="new-password" required minlength="10" aria-describedby="pw-hint" data-testid="signup-password">
+          <span class="hint" id="pw-hint">At least 10 characters. A short phrase is easier to remember.</span>
+        </div>
+        <p class="error" id="form-error" role="alert" data-testid="signup-error"></p>
+        <button class="btn" type="submit" data-testid="signup-submit">Create account</button>
+        <p class="switch">Already have an account? <a href="/login">Sign in</a></p>
+      </form>
+    </main>
+  </div>
+  <script src="/static/hz.js"></script>
+  <script src="/static/auth.js"></script>
+</body>
+</html>

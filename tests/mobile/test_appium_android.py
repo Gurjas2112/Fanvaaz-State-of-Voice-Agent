@@ -20,6 +20,8 @@ pytestmark = pytest.mark.mobile
 
 APPIUM_URL = os.getenv("APPIUM_URL")
 APP_URL = os.getenv("APP_URL", "http://10.0.2.2:8000")
+EMAIL = os.getenv("HAWAAZ_ADMIN_EMAIL", "admin@hawaaz.test")
+PASSWORD = os.getenv("HAWAAZ_ADMIN_PASSWORD", "Admin-pass-2026!")
 
 if not APPIUM_URL:
     pytest.skip("set APPIUM_URL to run Appium tests", allow_module_level=True)
@@ -52,17 +54,27 @@ def driver():
 
 @pytest.fixture
 def dashboard(driver):
-    driver.get(APP_URL + "/")
+    driver.get(APP_URL + "/app")
+    if "/login" in driver.current_url:  # first test signs in with the touch keyboard
+        driver.find_element(*tid("login-email")).send_keys(EMAIL)
+        driver.find_element(*tid("login-password")).send_keys(PASSWORD)
+        driver.find_element(*tid("login-submit")).click()
     WebDriverWait(driver, 30).until(
         lambda d: d.execute_script("return document.body.dataset.ready") == "true"
     )
     return driver
 
 
-def test_kpis_visible_on_phone(dashboard):
-    sov = WebDriverWait(dashboard, 10).until(EC.visibility_of_element_located(tid("kpi-sov")))
+def test_landing_on_phone(driver):
+    driver.get(APP_URL + "/")
+    WebDriverWait(driver, 15).until(EC.visibility_of_element_located(tid("cta-signup")))
+    assert len(driver.find_elements(By.CSS_SELECTOR, '[data-testid="hero-fan"] path.blade')) == 8
+
+
+def test_brief_visible_on_phone(dashboard):
+    sov = WebDriverWait(dashboard, 10).until(EC.visibility_of_element_located(tid("fact-sov")))
     assert sov.text.endswith("%")
-    assert dashboard.find_element(*tid("bar-Atomberg")).is_displayed()
+    assert "Atomberg holds" in dashboard.find_element(*tid("brief-sentence")).text
 
 
 def test_no_horizontal_scroll(dashboard):
@@ -71,15 +83,21 @@ def test_no_horizontal_scroll(dashboard):
     assert sw <= vw + 2, f"page is {sw}px wide on a {vw}px screen"
 
 
-def test_keyword_switch(dashboard):
-    before = dashboard.find_element(*tid("kpi-sov")).text
-    # Native <select> pickers differ by Android version; set the value the way the UI does.
-    dashboard.execute_script(
-        "const s=document.querySelector('[data-testid=keyword-select]');"
-        "s.value='BLDC fan'; s.dispatchEvent(new Event('change'));"
-    )
-    WebDriverWait(dashboard, 10).until(lambda d: d.find_element(*tid("kpi-sov")).text != before)
-    assert "50 videos" in dashboard.find_element(*tid("run-meta")).text
+def test_keyword_switch_by_tap(dashboard):
+    before = dashboard.find_element(*tid("rank-Atomberg")).text
+    pill = dashboard.find_element(*tid("kw-BLDC fan"))
+    dashboard.execute_script("arguments[0].scrollIntoView({inline: 'center'})", pill)
+    pill.click()
+    WebDriverWait(dashboard, 10).until(lambda d: d.find_element(*tid("rank-Atomberg")).text != before)
+    assert "across 50 videos" in dashboard.find_element(*tid("breakdown")).text
+
+
+def test_mark_handled_by_tap(dashboard):
+    before = int(dashboard.find_element(*tid("fact-replies")).text)
+    item = dashboard.find_elements(*tid("inbox-item"))[0]
+    dashboard.execute_script("arguments[0].scrollIntoView()", item)
+    item.find_element(*tid("mark-handled")).click()
+    WebDriverWait(dashboard, 10).until(lambda d: int(d.find_element(*tid("fact-replies")).text) == before - 1)
 
 
 def test_ask_on_touch_keyboard(dashboard):

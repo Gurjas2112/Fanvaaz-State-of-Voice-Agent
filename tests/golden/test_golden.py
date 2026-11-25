@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from atompulse.evaluate import evaluate, load
+from hawaaz.evaluate import evaluate, load
 
 GOLDEN = Path(__file__).parent
 

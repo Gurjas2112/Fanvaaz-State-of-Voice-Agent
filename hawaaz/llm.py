@@ -16,7 +16,7 @@ import httpx
 
 from .config import Settings, get_settings
 
-log = logging.getLogger("atompulse.llm")
+log = logging.getLogger("hawaaz.llm")
 
 
 class LLM(Protocol):

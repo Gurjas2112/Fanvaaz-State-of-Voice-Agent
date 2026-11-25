@@ -1,11 +1,11 @@
 """LLM-graded evaluation with DeepEval and Ragas (needs a real LLM key).
 
-Run:  ATOMPULSE_LLM_BASE_URL=https://api.groq.com/openai/v1 \
-      ATOMPULSE_LLM_API_KEY=... pip install -e ".[llm-evals]" && pytest -m llm
+Run:  HAWAAZ_LLM_BASE_URL=https://api.groq.com/openai/v1 \
+      HAWAAZ_LLM_API_KEY=... pip install -e ".[llm-evals]" && pytest -m llm
 
 The same OpenAI-compatible endpoint is used as the system under test and as the
 judge. For a stricter setup, point the judge at a different, stronger model with
-ATOMPULSE_JUDGE_MODEL.
+HAWAAZ_JUDGE_MODEL.
 """
 
 from __future__ import annotations
@@ -15,20 +15,20 @@ import os
 
 import pytest
 
-from atompulse.ask import Answerer
-from atompulse.config import Settings
-from atompulse.insights import build, rewrite_with_llm
-from atompulse.llm import OpenAICompatLLM, parse_json
+from hawaaz.ask import Answerer
+from hawaaz.config import Settings
+from hawaaz.insights import build, rewrite_with_llm
+from hawaaz.llm import OpenAICompatLLM, parse_json
 
 pytestmark = pytest.mark.llm
 
-BASE = os.getenv("ATOMPULSE_LLM_BASE_URL") or os.getenv("LLM_EVAL_BASE_URL")
-KEY = os.getenv("ATOMPULSE_LLM_API_KEY") or os.getenv("LLM_EVAL_API_KEY")
-MODEL = os.getenv("ATOMPULSE_LLM_MODEL", "llama-3.3-70b-versatile")
-JUDGE = os.getenv("ATOMPULSE_JUDGE_MODEL", MODEL)
+BASE = os.getenv("HAWAAZ_LLM_BASE_URL") or os.getenv("LLM_EVAL_BASE_URL")
+KEY = os.getenv("HAWAAZ_LLM_API_KEY") or os.getenv("LLM_EVAL_API_KEY")
+MODEL = os.getenv("HAWAAZ_LLM_MODEL", "llama-3.3-70b-versatile")
+JUDGE = os.getenv("HAWAAZ_JUDGE_MODEL", MODEL)
 
 if not (BASE and KEY):
-    pytest.skip("LLM evals need ATOMPULSE_LLM_BASE_URL and ATOMPULSE_LLM_API_KEY", allow_module_level=True)
+    pytest.skip("LLM evals need HAWAAZ_LLM_BASE_URL and HAWAAZ_LLM_API_KEY", allow_module_level=True)
 
 QUESTIONS = [
     "Why do people complain about Atomberg?",

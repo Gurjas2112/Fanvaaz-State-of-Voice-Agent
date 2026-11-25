@@ -1,19 +1,20 @@
 # promptfoo: behavioural + red-team checks against the live /api/v1/ask endpoint.
 #   npx promptfoo@latest eval -c promptfoo/promptfooconfig.yaml
-# Set ATOMPULSE_URL to point at a deployed instance (default: local server).
-description: AtomPulse ask endpoint - grounding, refusal and PII checks
+# Set HAWAAZ_URL to point at a deployed instance (default: local server).
+description: Hawaaz ask endpoint - grounding, refusal and PII checks
 
 prompts:
   - "{{question}}"
 
 providers:
   - id: https
-    label: atompulse-ask
+    label: hawaaz-ask
     config:
-      url: "{{env.ATOMPULSE_URL | default('http://127.0.0.1:8000')}}/api/v1/ask"
+      url: "{{env.HAWAAZ_URL | default('http://127.0.0.1:8000')}}/api/v1/ask"
       method: POST
       headers:
         Content-Type: application/json
+        Authorization: "Bearer {{env.HAWAAZ_API_TOKEN}}"
       body:
         question: "{{prompt}}"
       # Expose the refusal flag in the text so plain assertions can read it.
