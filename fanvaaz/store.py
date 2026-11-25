@@ -1,46 +1,21 @@
-"""SQLite persistence (one file, zero setup).
+"""Persistence for runs, profile and triage, on SQLite or PostgreSQL (see db.py).
 
 Runs are append-only: every collection is a new run, the API serves the latest
-one, and older runs stay for comparison. Swap for Postgres by reimplementing this
-module; nothing else touches SQL.
+one, and older runs stay for comparison. All SQL is portable; db.py picks the
+engine from FANVAAZ_DATABASE_URL (Postgres) or FANVAAZ_DB_PATH (SQLite).
 """
 
 from __future__ import annotations
 
 import json
-import sqlite3
 import threading
-from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .db import Database
 from .models import KeywordReport, Mention, RunInfo, Video
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS runs (
-  run_id TEXT PRIMARY KEY, source TEXT NOT NULL, created_at TEXT NOT NULL,
-  keywords TEXT NOT NULL, videos INTEGER NOT NULL, comments INTEGER NOT NULL,
-  quota_units_used INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS videos (
-  run_id TEXT NOT NULL, keyword TEXT NOT NULL, video_id TEXT NOT NULL, rank INTEGER NOT NULL,
-  body TEXT NOT NULL, PRIMARY KEY (run_id, keyword, video_id)
-);
-CREATE TABLE IF NOT EXISTS mentions (
-  run_id TEXT NOT NULL, keyword TEXT NOT NULL, brand TEXT NOT NULL, body TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_mentions_run ON mentions(run_id, keyword);
-CREATE TABLE IF NOT EXISTS reports (
-  run_id TEXT NOT NULL, keyword TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (run_id, keyword)
-);
-CREATE TABLE IF NOT EXISTS insights (
-  run_id TEXT PRIMARY KEY, body TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS risks (
-  run_id TEXT NOT NULL, brand TEXT NOT NULL, severity TEXT NOT NULL, score INTEGER NOT NULL, body TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_risks_run ON risks(run_id, brand, severity);
-"""
+RUN_COLS = "run_id, source, created_at, keywords, videos, comments, quota_units_used, profile"
 
 
 def _run_from_row(row) -> RunInfo:
@@ -61,28 +36,22 @@ def _run_from_row(row) -> RunInfo:
 
 
 class Store:
-    def __init__(self, path: Path):
-        self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, target: str | Path):
+        """`target` is a SQLite file path or a postgresql:// URL."""
+        self.db = Database(target)
+        self.path = Path(target) if self.db.dialect == "sqlite" else None
         self._lock = threading.Lock()
-        with self._conn() as c:
-            c.executescript(SCHEMA)
-            cols = {r[1] for r in c.execute("PRAGMA table_info(runs)")}
-            if "profile" not in cols:  # databases from before tracking profiles
-                c.execute("ALTER TABLE runs ADD COLUMN profile TEXT")
-            c.execute(
-                "CREATE TABLE IF NOT EXISTS app_profile (id INTEGER PRIMARY KEY CHECK (id = 1),"
-                " body TEXT NOT NULL, updated_by TEXT NOT NULL, updated_at TEXT NOT NULL)"
-            )
 
-    @contextmanager
+    @classmethod
+    def from_settings(cls, settings) -> Store:
+        return cls(settings.database_url or settings.db_path)
+
+    @property
+    def dialect(self) -> str:
+        return self.db.dialect
+
     def _conn(self):
-        conn = sqlite3.connect(self.path, check_same_thread=False)
-        try:
-            yield conn
-            conn.commit()
-        finally:
-            conn.close()
+        return self.db.conn()
 
     def save_run(
         self,
@@ -95,7 +64,8 @@ class Store:
     ) -> None:
         with self._lock, self._conn() as c:
             c.execute(
-                "INSERT INTO runs VALUES (?,?,?,?,?,?,?,?)",
+                "INSERT INTO runs (run_id, source, created_at, keywords, videos, comments, quota_units_used, profile)"
+                " VALUES (?,?,?,?,?,?,?,?)",
                 (
                     info.run_id,
                     info.source,
@@ -110,7 +80,8 @@ class Store:
                 ),
             )
             c.executemany(
-                "INSERT OR REPLACE INTO videos VALUES (?,?,?,?,?)",
+                "INSERT INTO videos VALUES (?,?,?,?,?) ON CONFLICT (run_id, keyword, video_id)"
+                " DO UPDATE SET rank = excluded.rank, body = excluded.body",
                 [(info.run_id, v.keyword, v.video_id, v.rank, v.model_dump_json()) for v in videos],
             )
             c.executemany(
@@ -118,10 +89,13 @@ class Store:
                 [(info.run_id, m.keyword, m.brand, m.model_dump_json()) for m in mentions],
             )
             c.executemany(
-                "INSERT OR REPLACE INTO reports VALUES (?,?,?)",
+                "INSERT INTO reports VALUES (?,?,?) ON CONFLICT (run_id, keyword) DO UPDATE SET body = excluded.body",
                 [(info.run_id, k, r.model_dump_json()) for k, r in reports.items()],
             )
-            c.execute("INSERT OR REPLACE INTO insights VALUES (?,?)", (info.run_id, json.dumps(insights)))
+            c.execute(
+                "INSERT INTO insights VALUES (?,?) ON CONFLICT (run_id) DO UPDATE SET body = excluded.body",
+                (info.run_id, json.dumps(insights)),
+            )
             c.executemany(
                 "INSERT INTO risks VALUES (?,?,?,?,?)",
                 [
@@ -132,7 +106,7 @@ class Store:
 
     def latest_run(self) -> RunInfo | None:
         with self._conn() as c:
-            row = c.execute("SELECT * FROM runs ORDER BY created_at DESC LIMIT 1").fetchone()
+            row = c.execute(f"SELECT {RUN_COLS} FROM runs ORDER BY created_at DESC LIMIT 1").fetchone()
         if not row:
             return None
         return _run_from_row(row)
@@ -184,7 +158,9 @@ class Store:
     # ---- run history and day-over-day comparison --------------------------
     def runs(self, limit: int = 30) -> list[RunInfo]:
         with self._conn() as c:
-            rows = c.execute("SELECT * FROM runs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+            rows = c.execute(
+                f"SELECT {RUN_COLS} FROM runs ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
         return [_run_from_row(r) for r in rows]
 
     def previous_run(self, run_id: str, same_source: bool = True) -> RunInfo | None:
@@ -195,11 +171,6 @@ class Store:
         return None
 
     # ---- risk triage: survives across runs, keyed by comment + brand -------
-    def _ensure_triage(self, c) -> None:
-        c.execute("""CREATE TABLE IF NOT EXISTS risk_status (
-            comment_id TEXT NOT NULL, brand TEXT NOT NULL, status TEXT NOT NULL,
-            note TEXT, user_email TEXT NOT NULL, updated_at TEXT NOT NULL,
-            PRIMARY KEY (comment_id, brand))""")
 
     def set_risk_status(
         self, comment_id: str, brand: str, status: str, user_email: str, note: str = ""
@@ -207,9 +178,10 @@ class Store:
 
         now = datetime.now(UTC).isoformat(timespec="seconds")
         with self._lock, self._conn() as c:
-            self._ensure_triage(c)
             c.execute(
-                "INSERT OR REPLACE INTO risk_status VALUES (?,?,?,?,?,?)",
+                "INSERT INTO risk_status VALUES (?,?,?,?,?,?) ON CONFLICT (comment_id, brand) DO UPDATE SET"
+                " status = excluded.status, note = excluded.note, user_email = excluded.user_email,"
+                " updated_at = excluded.updated_at",
                 (comment_id, brand, status, note[:300], user_email, now),
             )
         return {
@@ -223,8 +195,9 @@ class Store:
 
     def risk_statuses(self) -> dict[tuple[str, str], dict]:
         with self._conn() as c:
-            self._ensure_triage(c)
-            rows = c.execute("SELECT * FROM risk_status").fetchall()
+            rows = c.execute(
+                "SELECT comment_id, brand, status, note, user_email, updated_at FROM risk_status"
+            ).fetchall()
         return {
             (r[0], r[1]): {"status": r[2], "note": r[3], "updated_by": r[4], "updated_at": r[5]} for r in rows
         }
@@ -241,6 +214,7 @@ class Store:
         now = datetime.now(UTC).isoformat(timespec="seconds")
         with self._lock, self._conn() as c:
             c.execute(
-                "INSERT OR REPLACE INTO app_profile VALUES (1, ?, ?, ?)",
+                "INSERT INTO app_profile VALUES (1, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET"
+                " body = excluded.body, updated_by = excluded.updated_by, updated_at = excluded.updated_at",
                 (json.dumps(body, ensure_ascii=False), user_email, now),
             )

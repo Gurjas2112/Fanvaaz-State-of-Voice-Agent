@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Fanvaaz admin</title>
   <link rel="preload" href="/static/fonts/bricolage-grotesque-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#14213d">
+  <link rel="icon" href="/static/icons/icon-192.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
   <link rel="stylesheet" href="/static/hz.css">
 </head>
 <body>
@@ -24,6 +28,11 @@
     <section class="today">
       <h1 class="sentence">Admin</h1>
     </section>
+
+    <div class="banner" id="onboarding" data-testid="onboarding" hidden>
+      <div class="wrap">Welcome. Nothing is tracked yet: pick an example setup below or paste your own brand,
+        its rivals and the YouTube searches your buyers use. Then run the first live collection.</div>
+    </div>
 
     <section class="panel" aria-labelledby="track-title" data-testid="track-panel">
       <h2 id="track-title">What Fanvaaz tracks</h2>
@@ -53,13 +62,13 @@
       <p class="sub" id="collect-note"></p>
       <p class="sub" id="yt-hint" hidden>Add a YouTube API key (FANVAAZ_YOUTUBE_API_KEY) to enable live collection.</p>
       <div class="inbox-tools">
-        <button class="btn" type="button" id="run-youtube" data-testid="run-youtube">Collect from YouTube now</button>
-        <button class="btn ghost" type="button" id="run-demo" data-testid="run-demo">Load demo data</button>
+        <button class="btn" type="button" id="run-youtube" data-testid="run-youtube">Collect live from YouTube now</button>
       </div>
+      <ol class="steps" id="run-progress" data-testid="run-progress" hidden></ol>
       <p class="error" id="run-error" role="alert" data-testid="run-error"></p>
       <div class="table-wrap">
         <table class="grid" data-testid="runs-table">
-          <thead><tr><th>Collected</th><th>Brand</th><th>Source</th><th>Videos</th><th>Comments</th><th>API units</th></tr></thead>
+          <thead><tr><th>Collected</th><th>Brand</th><th>Source</th><th>Videos</th><th>Comments</th><th>API units</th><th>Evidence</th></tr></thead>
           <tbody id="runs"></tbody>
         </table>
       </div>
@@ -76,6 +85,43 @@
       </div>
     </section>
 
+    <section class="panel" aria-labelledby="aiops-title" data-testid="aiops-panel">
+      <h2 id="aiops-title">AI operations</h2>
+      <p class="sub">Every language-model call in the last 7 days, from the LLM ledger: tokens (estimated before the call,
+        reported after), provider-cached tokens, cost, response-cache hits, schema validity and refusals by the governance policy.</p>
+      <div class="facts" id="aiops-facts" data-testid="aiops-facts"></div>
+      <div class="table-wrap">
+        <table class="grid" data-testid="aiops-nodes">
+          <thead><tr><th>Step</th><th>Calls</th><th>Cached</th><th>Refused</th><th>Prompt tokens</th><th>Estimated</th>
+            <th>Completion</th><th>Cost (USD)</th><th>p95 ms</th></tr></thead>
+          <tbody id="aiops-nodes"></tbody>
+        </table>
+      </div>
+      <h3 class="h3">Agent steps (LangGraph spans)</h3>
+      <div class="table-wrap">
+        <table class="grid" data-testid="aiops-spans">
+          <thead><tr><th>Node</th><th>Runs</th><th>p50 ms</th><th>p95 ms</th></tr></thead>
+          <tbody id="aiops-spans"></tbody>
+        </table>
+      </div>
+      <h3 class="h3">Prompts in use</h3>
+      <ul class="plain" id="aiops-prompts" data-testid="aiops-prompts"></ul>
+    </section>
+
+    <section class="panel" aria-labelledby="gov-title" data-testid="gov-panel">
+      <h2 id="gov-title">Governance</h2>
+      <p class="sub">The policy every model call passes: allowed models and tasks, budgets, and what a model may never do.
+        Refused calls keep the rule-based result.</p>
+      <dl class="facts-list" id="gov" data-testid="gov"></dl>
+      <h3 class="h3">Audit log</h3>
+      <div class="table-wrap">
+        <table class="grid" data-testid="audit-table">
+          <thead><tr><th>When</th><th>Who</th><th>What</th><th>Target</th></tr></thead>
+          <tbody id="audit"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="panel" aria-labelledby="system-title" data-testid="system-panel">
       <h2 id="system-title">Setup</h2>
       <dl class="facts-list" id="system"></dl>
@@ -83,5 +129,6 @@
   </main>
   <script src="/static/hz.js"></script>
   <script src="/static/admin.js"></script>
+  <script src="/static/pwa.js"></script>
 </body>
 </html>

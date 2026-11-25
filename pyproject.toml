@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fanvaaz"
-version = "1.0.0"
-description = "Share-of-Voice agent for Atomberg on YouTube, with an LLM quality harness"
+version = "2.0.0"
+description = "YouTube Share-of-Voice agent for any brand: LangGraph agents, hybrid RAG, MCP server, AI governance and an LLM quality harness"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -16,6 +16,14 @@ dependencies = [
   "httpx>=0.27",
   "pydantic>=2.7",
   "pydantic-settings>=2.3",
+  "pyyaml>=6.0",
+  "numpy>=1.26",
+  "langgraph>=1.0",
+  "langgraph-checkpoint-sqlite>=2.0",
+  "langgraph-checkpoint-postgres>=2.0",
+  "psycopg[binary]>=3.2",
+  "psycopg-pool>=3.2",
+  "mcp>=1.20",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +36,7 @@ dev = [
 mobile = ["Appium-Python-Client>=4"]
 llm-evals = ["deepeval>=3.0", "ragas>=0.2", "langchain-openai>=0.2", "datasets>=2.19"]
 fuzz = ["schemathesis>=4"]
+gcp = ["google-auth>=2.30"]
 
 [project.scripts]
 fanvaaz = "fanvaaz.cli:main"
@@ -36,7 +45,7 @@ fanvaaz = "fanvaaz.cli:main"
 include = ["fanvaaz*"]
 
 [tool.setuptools.package-data]
-fanvaaz = ["static/*", "static/fonts/*", "data/*.json"]
+fanvaaz = ["static/*", "static/fonts/*", "static/icons/*", "data/*.yaml", "data/profiles/*.json", "prompts/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -47,6 +56,7 @@ markers = [
   "llm: needs a real LLM key (DeepEval / Ragas); skipped otherwise",
   "e2e: Playwright browser tests against a live server",
   "mobile: Appium tests on an Android emulator; needs APPIUM_URL",
+  "live: calls the real YouTube API (needs FANVAAZ_YOUTUBE_API_KEY); skipped otherwise",
 ]
 
 [tool.ruff]

@@ -5,7 +5,7 @@ import { check } from "k6";
 
 const BASE = __ENV.BASE_URL || "http://127.0.0.1:8000";
 const AUTH = { Authorization: `Bearer ${__ENV.FANVAAZ_API_TOKEN || "local-service-token"}` };
-const KEYWORDS = ["all", "smart fan", "BLDC fan", "energy saving fan"];
+const KEYWORDS = ["all", "best camera phone India", "smartphone battery test", "phone comparison review"];
 
 export const options = {
   scenarios: {
@@ -28,7 +28,7 @@ export function reads() {
 }
 
 export function asks() {
-  const r = http.post(`${BASE}/api/v1/ask`, JSON.stringify({ question: "Why do people complain about Atomberg?" }),
+  const r = http.post(`${BASE}/api/v1/ask`, JSON.stringify({ question: "Why do people complain about OnePlus?" }),
     { headers: { "Content-Type": "application/json", ...AUTH } });
   check(r, { "200": (res) => res.status === 200, "not refused": (res) => res.json("refused") === false });
 }

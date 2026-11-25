@@ -6,8 +6,10 @@ Quota per keyword (default N=50, 100 comments/video):
   commentThreads.list  1 unit per video  (50 units)
   -> about 151 units per keyword, 906 for the 6 default keywords, of a 10,000/day free quota.
 
-Every raw API response is saved under data/raw/<run_id>/ so runs can be replayed
-and tests never need the network.
+Every raw API response is saved under data/raw/<run_id>/ (FANVAAZ_SAVE_RAW) for
+debugging. A *snapshot* is the processed, PII-redacted result of one real
+collection (`save_snapshot`): the offline tests replay a committed snapshot, so
+they run on real YouTube comments without a key or the network.
 """
 
 from __future__ import annotations
@@ -62,7 +64,7 @@ class YouTubeCollector:
             r.raise_for_status()
             self.units += COST[endpoint]
             data = r.json()
-            if self.run_dir and save_as:
+            if self.run_dir and save_as and self.s.save_raw:
                 path = self.run_dir / f"{save_as}.json"
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
@@ -156,13 +158,22 @@ class YouTubeCollector:
         return videos
 
 
-def load_demo(path: Path) -> list[Video]:
-    """Load the bundled synthetic demo dataset (no network, no key)."""
-    data = json.loads(path.read_text(encoding="utf-8"))
+def save_snapshot(videos: list[Video], path: Path, meta: dict) -> Path:
+    """Write a replayable snapshot. Text is already cleaned and PII-redacted; authors are hashes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    body = {**meta, "videos": [v.model_dump() for v in videos]}
+    path.write_text(json.dumps(body, ensure_ascii=False, indent=1), encoding="utf-8")
+    return path
+
+
+def load_snapshot(path: Path) -> tuple[list[Video], dict]:
+    """(videos, metadata). Text is re-run through `prepare` so an edited file cannot smuggle PII in."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
     videos = []
-    for v in data["videos"]:
+    for v in data.get("videos", []):
         v = dict(v)
         v["description"] = prepare(v.get("description", ""))
         v["comments"] = [{**c, "text": prepare(c["text"])} for c in v.get("comments", [])]
         videos.append(Video.model_validate(v))
-    return videos
+    meta = {k: v for k, v in data.items() if k != "videos"}
+    return videos, meta

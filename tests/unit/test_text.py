@@ -27,7 +27,7 @@ def test_numbers_that_are_not_phones_survive(safe):
 
 
 def test_clean_strips_html_and_entities():
-    assert clean("Atomberg&#39;s <b>best</b>   fan") == "Atomberg's best fan"
+    assert clean("OnePlus&#39;s <b>best</b>   phone") == "OnePlus's best phone"
 
 
 def test_prepare_cleans_then_redacts():

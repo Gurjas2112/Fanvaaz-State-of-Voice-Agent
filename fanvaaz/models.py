@@ -40,6 +40,8 @@ class Mention(BaseModel):
     brand: str
     sentiment: Sentiment
     aspects: list[str] = Field(default_factory=list)
+    # |rule score|: how sure the rule engine was. Not stored; decides which mentions the LLM re-checks.
+    confidence: float = Field(default=0.0, exclude=True)
 
 
 class BrandMetrics(BaseModel):
@@ -65,13 +67,14 @@ class KeywordReport(BaseModel):
 
 class RunInfo(BaseModel):
     run_id: str
-    source: Literal["youtube", "synthetic-demo"]
+    # "youtube": collected live. "replay": re-scored from a recorded real collection (tests, audits).
+    source: Literal["youtube", "replay"]
     created_at: str
     keywords: list[str]
     videos: int
     comments: int
     quota_units_used: int = 0
-    # The tracking profile this run used; old databases without it read as Atomberg.
-    profile_id: str = "atomberg-fans"
-    focus_brand: str = "Atomberg"
+    # The tracking profile this run used.
+    profile_id: str = ""
+    focus_brand: str = ""
     brands: list[str] = Field(default_factory=list)

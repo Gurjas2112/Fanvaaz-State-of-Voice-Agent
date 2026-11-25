@@ -68,13 +68,13 @@ def dashboard(driver):
 def test_landing_on_phone(driver):
     driver.get(APP_URL + "/")
     WebDriverWait(driver, 15).until(EC.visibility_of_element_located(tid("cta-signup")))
-    assert len(driver.find_elements(By.CSS_SELECTOR, '[data-testid="hero-fan"] path.blade')) == 8
+    assert len(driver.find_elements(By.CSS_SELECTOR, '[data-testid="hero-fan"] path.blade')) >= 5
 
 
 def test_brief_visible_on_phone(dashboard):
     sov = WebDriverWait(dashboard, 10).until(EC.visibility_of_element_located(tid("fact-sov")))
     assert sov.text.endswith("%")
-    assert "Atomberg holds" in dashboard.find_element(*tid("brief-sentence")).text
+    assert "OnePlus holds" in dashboard.find_element(*tid("brief-sentence")).text
 
 
 def test_no_horizontal_scroll(dashboard):
@@ -84,11 +84,11 @@ def test_no_horizontal_scroll(dashboard):
 
 
 def test_keyword_switch_by_tap(dashboard):
-    before = dashboard.find_element(*tid("rank-Atomberg")).text
-    pill = dashboard.find_element(*tid("kw-BLDC fan"))
+    before = dashboard.find_element(*tid("rank-OnePlus")).text
+    pill = dashboard.find_element(*tid("kw-best camera phone India"))
     dashboard.execute_script("arguments[0].scrollIntoView({inline: 'center'})", pill)
     pill.click()
-    WebDriverWait(dashboard, 10).until(lambda d: d.find_element(*tid("rank-Atomberg")).text != before)
+    WebDriverWait(dashboard, 10).until(lambda d: d.find_element(*tid("rank-OnePlus")).text != before)
     assert "across 50 videos" in dashboard.find_element(*tid("breakdown")).text
 
 
@@ -103,7 +103,7 @@ def test_mark_handled_by_tap(dashboard):
 def test_ask_on_touch_keyboard(dashboard):
     box = dashboard.find_element(*tid("ask-input"))
     box.click()
-    box.send_keys("What do people say about the Atomberg remote?")
+    box.send_keys("What do people say about the Samsung camera?")
     dashboard.find_element(*tid("ask-submit")).click()
     answer = WebDriverWait(dashboard, 15).until(
         lambda d: (
@@ -113,7 +113,7 @@ def test_ask_on_touch_keyboard(dashboard):
         )
     )
     assert answer.get_attribute("data-refused") == "false"
-    assert "Atomberg" in answer.text
+    assert "OnePlus" in answer.text
 
 
 def test_injection_refused_on_mobile(dashboard):

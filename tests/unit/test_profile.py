@@ -1,4 +1,4 @@
-"""Tracking profiles: Fanvaaz must work for any brand, not just the Atomberg example."""
+"""Tracking profiles: Fanvaaz must work for any brand, not just the OnePlus example."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from fanvaaz.risk import flag_comments
 from fanvaaz.sentiment import score_text
 from fanvaaz.sov import by_keyword
 
-ATHER = "ather-scooters"
+ATHER = "ev-scooters-india"
 
 
 def base(**over) -> dict:
@@ -31,11 +31,22 @@ def base(**over) -> dict:
     return p
 
 
-def test_every_preset_validates_and_atomberg_is_default():
+def test_every_template_validates_and_the_test_profile_is_active():
     ps = profile.presets()
-    assert {"atomberg-fans", ATHER} <= set(ps)
-    assert profile.active().id == "atomberg-fans"
-    assert profile.active().focus_brand == "Atomberg"
+    assert {"smartphones-india", ATHER} <= set(ps)
+    assert profile.active().id == "smartphones-india"  # FANVAAZ_PROFILE in conftest
+    assert profile.active().focus_brand == "OnePlus"
+
+
+def test_nothing_is_tracked_until_someone_chooses(monkeypatch):
+    """A fresh install has no default brand: onboarding must pick one."""
+    from fanvaaz.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "profile", "")
+    profile.reset()
+    assert profile.configured() is False
+    with pytest.raises(profile.NoProfileError):
+        profile.active()
 
 
 @pytest.mark.parametrize(
@@ -64,11 +75,11 @@ def test_brand_name_is_always_an_alias_and_aliases_are_deduplicated():
 
 
 def test_switching_profile_switches_brand_detection():
-    text = "Ather 450X beats Ola S1 on range, Atomberg fans are another story"
-    assert brands_in(text) == ["Atomberg"]
+    text = "Ather 450X beats Ola S1 on range, OnePlus phones are another story"
+    assert brands_in(text) == ["OnePlus"]
     profile.set_active(profile.load(ATHER))
     assert brands_in(text) == ["Ather", "Ola Electric"]
-    assert "Havells" not in all_brands()
+    assert "Samsung" not in all_brands()
 
 
 def test_sentiment_and_aspects_follow_the_profile():
@@ -93,7 +104,7 @@ def test_profile_risk_terms_add_to_the_generic_ones():
         v = video(text)
         return flag_comments([v], extract_video(v))
 
-    assert flags("Ola S1 brake failure on the highway") == []  # not a fan-world term
+    assert flags("Ola S1 brake failure on the highway") == []  # not a phone-world term
     profile.set_active(profile.load(ATHER))
     got = flags("Ola S1 brake failure on the highway")
     assert got and got[0]["brand"] == "Ola Electric" and "safety" in got[0]["categories"]
@@ -102,7 +113,7 @@ def test_profile_risk_terms_add_to_the_generic_ones():
 
 
 def test_ask_topic_guard_follows_the_profile():
-    q = "How is the charging experience on scooters?"
+    q = "How far does the range go on scooters?"
     assert "off_topic" in check_question(q).reasons
     profile.set_active(profile.load(ATHER))
     assert check_question(q).allowed

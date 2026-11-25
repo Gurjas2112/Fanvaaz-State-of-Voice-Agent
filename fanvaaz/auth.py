@@ -26,17 +26,7 @@ from datetime import UTC, datetime, timedelta
 from .config import Settings
 from .store import Store
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
-  password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('admin','analyst')),
-  active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, last_login TEXT
-);
-CREATE TABLE IF NOT EXISTS sessions (
-  token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at TEXT NOT NULL, expires_at TEXT NOT NULL
-);
-"""
+USER_COLS = "id, email, name, password_hash, role, active, created_at, last_login"
 
 # Shared with the OpenAPI schema. Printable ASCII without "@" or space, written as explicit ranges:
 # Python's \s and JSON Schema's (ECMAScript) \s disagree on \x1c-\x1f and \x85, and fuzzing found both.
@@ -49,7 +39,7 @@ COMMON_PASSWORDS = {
     "qwertyuiop",
     "password12",
     "iloveyou12",
-    "atomberg123",
+    "fanvaaz2026!",
     "fanvaaz1234",
     "welcome123",
     "admin12345",
@@ -135,9 +125,7 @@ class Accounts:
     def __init__(self, store: Store, settings: Settings):
         self.store, self.s = store, settings
         self._fails: dict[str, list[float]] = {}
-        self._lock = threading.Lock()
-        with store._conn() as c:
-            c.executescript(SCHEMA)
+        self._lock = threading.Lock()  # tables come from the migrations in db.py
 
     # ---- users -------------------------------------------------------------
     @staticmethod
@@ -170,7 +158,7 @@ class Accounts:
                         _now().isoformat(timespec="seconds"),
                     ),
                 )
-        except Exception as e:  # sqlite3.IntegrityError
+        except Exception as e:  # IntegrityError on either engine (unique email)
             raise AuthError(409, "An account with this email already exists. Sign in instead.") from e
         return self.get_by_email(email)  # type: ignore[return-value]
 
@@ -191,17 +179,19 @@ class Accounts:
 
     def get_by_email(self, email: str) -> User | None:
         with self.store._conn() as c:
-            r = c.execute("SELECT * FROM users WHERE email=?", (email.strip().lower(),)).fetchone()
+            r = c.execute(f"SELECT {USER_COLS} FROM users WHERE email=?", (email.strip().lower(),)).fetchone()
         return _row(r) if r else None
 
     def get(self, user_id: int) -> User | None:
         with self.store._conn() as c:
-            r = c.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+            r = c.execute(f"SELECT {USER_COLS} FROM users WHERE id=?", (user_id,)).fetchone()
         return _row(r) if r else None
 
     def list_users(self) -> list[User]:
         with self.store._conn() as c:
-            return [_row(r) for r in c.execute("SELECT * FROM users ORDER BY created_at").fetchall()]
+            return [
+                _row(r) for r in c.execute(f"SELECT {USER_COLS} FROM users ORDER BY created_at").fetchall()
+            ]
 
     def admin_count(self) -> int:
         with self.store._conn() as c:
@@ -269,7 +259,7 @@ class Accounts:
         now = _now()
         with self.store._conn() as c:
             c.execute(
-                "INSERT INTO sessions VALUES (?,?,?,?)",
+                "INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?,?,?,?)",
                 (
                     hashlib.sha256(token.encode()).hexdigest(),
                     u.id,
@@ -292,7 +282,8 @@ class Accounts:
             return None
         with self.store._conn() as c:
             r = c.execute(
-                "SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at > ?",
+                "SELECT u.id, u.email, u.name, u.password_hash, u.role, u.active, u.created_at, u.last_login"
+                " FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at > ?",
                 (hashlib.sha256(token.encode()).hexdigest(), _now().isoformat()),
             ).fetchone()
         u = _row(r) if r else None

@@ -5,6 +5,16 @@ reports
 tests
 node_modules
 docs
+mobile
+app_screenshots_screen_recording
+deploy
+postman
+promptfoo
+load
+scripts
 **/__pycache__
 .pytest_cache
 .hypothesis
+*.db
+langgraph_config.txt
+job_form_details.txt

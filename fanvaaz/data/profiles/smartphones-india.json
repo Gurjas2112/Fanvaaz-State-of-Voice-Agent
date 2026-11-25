@@ -1,0 +1,51 @@
+{
+  "id": "smartphones-india",
+  "name": "Smartphones (India) - example",
+  "category": "smartphones",
+  "focus_brand": "OnePlus",
+  "brands": {
+    "OnePlus": ["oneplus", "one plus", "nord", "वनप्लस"],
+    "Samsung": ["samsung", "galaxy", "सैमसंग"],
+    "Xiaomi": ["xiaomi", "redmi", "poco", "शाओमी"],
+    "Realme": ["realme narzo", "realme", "narzo"],
+    "Vivo": ["vivo"],
+    "Oppo": ["oppo"],
+    "Motorola": ["motorola", "moto edge", "moto g"],
+    "Pixel": ["google pixel", "pixel"],
+    "Apple": ["iphone", "apple"],
+    "Lava": ["lava agni", "lava"]
+  },
+  "keywords": [
+    "best smartphone under 30000",
+    "best camera phone India",
+    "smartphone battery test",
+    "phone comparison review"
+  ],
+  "aspects": {
+    "battery": ["battery", "charging", "charger", "charge", "backup", "drain", "mah", "battery life"],
+    "camera": ["camera", "photo", "photos", "selfie", "zoom", "portrait", "night mode"],
+    "display": ["display", "screen", "amoled", "brightness", "refresh rate"],
+    "performance": ["performance", "lag", "laggy", "heating", "gaming", "processor", "smooth", "speed", "hang"],
+    "software & updates": ["software", "update", "updates", "bloatware", "ads", "ui", "app", "apps", "android"],
+    "service": ["service", "service center", "technician", "warranty", "customer care", "support", "replacement", "repair"],
+    "price": ["price", "cost", "expensive", "cheap", "paisa", "value for money", "costly", "mehenga"],
+    "build & design": ["design", "look", "looks", "build", "quality", "finish", "colour", "color", "weight"],
+    "sound": ["speaker", "speakers", "sound", "noise", "noisy", "silent", "quiet", "audio", "awaaz"]
+  },
+  "playbook": {
+    "battery": "publish screen-on-time and charging tests next to rival phones",
+    "camera": "lead creatives with unedited low-light and zoom samples",
+    "software & updates": "ship short explainers on update schedules and bloatware removal, pinned under top reviews",
+    "service": "route these complaints to service ops and publish service-centre turnaround times",
+    "price": "frame price as value: features per rupee against the closest rival",
+    "performance": "publish sustained-gaming and heating tests with frame-rate graphs",
+    "display": "show outdoor brightness comparisons in Shorts",
+    "build & design": "feature finishes and in-hand feel in Shorts",
+    "sound": "post speaker and call-quality comparisons recorded on camera"
+  },
+  "risk_terms": {
+    "safety": ["battery swelling", "phone exploded", "caught fire", "overheating badly", "burnt my hand"],
+    "product_failure": ["green line", "motherboard", "boot loop", "keeps restarting", "dead phone", "board failed"]
+  },
+  "domain_words": ["phone", "phones", "smartphone", "smartphones", "mobile", "battery", "camera", "display", "screen", "charging", "gaming", "update", "android", "5g"]
+}

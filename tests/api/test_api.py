@@ -9,21 +9,30 @@ def test_health(client):
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok" and body["has_data"] is True and body["llm_configured"] is False
+    assert body["profile_configured"] is True
     assert "X-Response-Time-ms" in r.headers
+
+
+def test_ready_reports_database_and_dependencies(client):
+    r = client.get("/ready")
+    assert r.status_code == 200
+    checks = r.json()["checks"]
+    assert checks["database"] is True and checks["schema_version"] >= 3
+    assert checks["youtube_key"] is False and checks["llm"].startswith("off")
 
 
 def test_keywords_start_with_all(client):
     ks = client.get("/api/v1/keywords").json()
-    assert ks[0] == "all" and "smart fan" in ks and len(ks) == 7
+    assert ks[0] == "all" and "best camera phone India" in ks and len(ks) == 5
 
 
-@pytest.mark.parametrize("kw", ["all", "smart fan", "BLDC fan"])
+@pytest.mark.parametrize("kw", ["all", "best camera phone India", "smartphone battery test"])
 def test_sov_schema(client, kw):
     r = client.get("/api/v1/sov", params={"keyword": kw})
     assert r.status_code == 200
     body = r.json()
-    assert body["focus_brand"] == "Atomberg"
-    assert body["run"]["source"] == "synthetic-demo"
+    assert body["focus_brand"] == "OnePlus"
+    assert body["run"]["source"] == "replay"  # a recorded real YouTube collection
     brands = body["report"]["brands"]
     assert brands, "expected at least one brand"
     assert [b["sov"] for b in brands] == sorted((b["sov"] for b in brands), reverse=True)
@@ -48,15 +57,67 @@ def test_insights_have_evidence(client):
     data = client.get("/api/v1/insights").json()
     assert len(data["insights"]) >= 5
     for ins in data["insights"]:
-        assert {"id", "kind", "title", "text", "evidence"} <= set(ins)
+        assert {"id", "kind", "title", "text", "evidence", "citations", "verified"} <= set(ins)
+        assert ins["verified"] is True, ins  # grounded numbers and resolvable citations
+        assert ins["citations"], ins["id"]
+
+
+def test_evidence_pack(client):
+    run_id = client.get("/api/v1/runs/latest").json()["run_id"]
+    r = client.get(f"/api/v1/runs/{run_id}/evidence")
+    assert r.status_code == 200
+    pack = r.json()
+    assert pack["verified_share"] == 1.0 and "SoV =" in pack["method"]["share_of_voice"]
+    cite = pack["insights"][0]["citations"][0]
+    assert cite["url"].startswith("https://www.youtube.com/watch?v=")
+    assert client.get("/api/v1/runs/20990101T000000-abcdef/evidence").status_code == 404
+    assert client.get("/api/v1/runs/not-a-run/evidence").status_code == 422
 
 
 def test_ask_happy_path(client):
-    r = client.post("/api/v1/ask", json={"question": "Why do people complain about Atomberg's remote?"})
+    r = client.post("/api/v1/ask", json={"question": "What do people say about the Samsung camera?"})
     assert r.status_code == 200
     body = r.json()
     assert body["refused"] is False and body["mode"] == "extractive"
-    assert "Atomberg" in body["answer"] and body["sources"]
+    assert "Samsung" in body["answer"] and body["sources"]
+    assert body["scope"]["aspect"] == "camera" and body["citations"][0] == "c1"
+    assert any(step.startswith("plan:") for step in body["reasoning_steps"])
+    assert body["context"]["used_tokens"] <= body["context"]["budget_tokens"]
+    assert body["thread_id"] and body["trace_id"]
+
+
+def test_ask_follow_up_uses_thread_memory(client):
+    first = client.post("/api/v1/ask", json={"question": "How is Samsung on battery?"}).json()
+    follow = client.post(
+        "/api/v1/ask", json={"question": "and camera?", "thread_id": first["thread_id"]}
+    ).json()
+    assert follow["scope"]["brands"] == ["Samsung"] and follow["scope"]["aspect"] == "camera"
+    assert any("follow-up" in s for s in follow["reasoning_steps"])
+    assert client.delete(f"/api/v1/ask/threads/{first['thread_id']}").status_code == 204
+
+
+def test_ask_repeat_is_served_from_the_verified_cache(client):
+    client.post("/api/v1/ask", json={"question": "What do viewers say about Vivo display?"})
+    again = client.post("/api/v1/ask", json={"question": "what do viewers say about the Vivo display"}).json()
+    assert again["cache"]["hit"] is True and again["cache"]["similarity"] >= 0.8
+
+
+def test_ask_is_rate_limited_per_user(client, monkeypatch):
+    from fanvaaz import api
+    from fanvaaz.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "ask_rate_per_min", 1)
+    api._ask_hits.clear()
+    codes = [client.post("/api/v1/ask", json={"question": "Samsung battery?"}).status_code for _ in range(2)]
+    assert codes == [200, 429]
+    api._ask_hits.clear()
+
+
+def test_prefs_round_trip(client):
+    r = client.put("/api/v1/me/prefs", json={"brands": ["Samsung", "NotABrand"], "aspects": ["camera"]})
+    assert r.status_code == 200 and r.json()["brands"] == ["Samsung"]
+    assert client.get("/api/v1/me/prefs").json()["aspects"] == ["camera"]
+    client.put("/api/v1/me/prefs", json={"brands": [], "aspects": []})
 
 
 @pytest.mark.parametrize("payload", [{}, {"question": ""}, {"question": "x" * 1001}, {"q": "hi"}])
@@ -65,12 +126,18 @@ def test_ask_validation(client, payload):
 
 
 def test_runs_reject_wrong_token(client):
-    r = client.post("/api/v1/runs", json={"source": "demo"}, headers={"Authorization": "Bearer wrong"})
+    r = client.post("/api/v1/runs", json={"source": "youtube"}, headers={"Authorization": "Bearer wrong"})
     assert r.status_code == 401
+
+
+def test_demo_source_no_longer_exists(client):
+    assert client.post("/api/v1/runs", json={"source": "demo"}).status_code == 422
 
 
 def test_runs_youtube_without_key_is_400(client):
     r = client.post("/api/v1/runs", json={"source": "youtube"})
+    assert r.status_code == 400 and "YOUTUBE_API_KEY" in r.json()["detail"]
+    r = client.post("/api/v1/runs/jobs", json={})
     assert r.status_code == 400 and "YOUTUBE_API_KEY" in r.json()["detail"]
 
 
@@ -83,8 +150,32 @@ def test_openapi_lists_every_route(client):
         "/api/v1/insights",
         "/api/v1/ask",
         "/api/v1/runs",
+        "/api/v1/runs/jobs",
+        "/api/v1/runs/{run_id}/evidence",
+        "/api/v1/admin/ai-ops",
+        "/ready",
+        "/metrics",
     ]:
         assert p in paths
+
+
+def test_ai_ops_audit_metrics_and_graphs(client):
+    ops = client.get("/api/v1/admin/ai-ops").json()
+    assert {"calls", "tokens", "cost_usd", "by_node", "spans", "governance", "prompts"} <= set(ops)
+    assert any(k.startswith("collect.") for k in ops["spans"])
+    assert {p["id"] for p in ops["prompts"]} >= {"sentiment", "rewrite", "ask", "plan"}
+    assert ops["governance"]["model_allowed"] is True
+    actions = {e["action"] for e in client.get("/api/v1/admin/audit?limit=1000").json()}
+    assert {"run.start", "run.done"} <= actions
+    m = client.get("/metrics")
+    assert m.status_code == 200 and "fanvaaz_llm_calls_total" in m.text
+    g = client.get("/api/v1/admin/graphs").json()
+    assert "relabel" in g["collect"] and "verify" in g["ask"]
+
+
+def test_ops_endpoints_need_admin(anon):
+    for path in ("/metrics", "/api/v1/admin/ai-ops", "/api/v1/admin/audit"):
+        assert anon.get(path).status_code == 401
 
 
 def test_pages_served(client):
@@ -95,12 +186,12 @@ def test_pages_served(client):
 
 
 def test_risks_endpoint_filters(client):
-    body = client.get("/api/v1/risks", params={"brand": "Atomberg", "severity": "high", "limit": 5}).json()
+    body = client.get("/api/v1/risks", params={"brand": "OnePlus", "severity": "high", "limit": 5}).json()
     assert body["categories"]["safety"] == 50
     assert 0 < len(body["flags"]) <= 5
-    assert all(f["brand"] == "Atomberg" and f["severity"] == "high" for f in body["flags"])
+    assert all(f["brand"] == "OnePlus" and f["severity"] == "high" for f in body["flags"])
     assert [f["score"] for f in body["flags"]] == sorted((f["score"] for f in body["flags"]), reverse=True)
-    assert body["summary"]["Atomberg"]["total"] >= body["summary"]["Atomberg"]["high"]
+    assert body["summary"]["OnePlus"]["total"] >= body["summary"]["OnePlus"]["high"]
 
 
 @pytest.mark.parametrize("params", [{"severity": "critical"}, {"limit": 0}, {"limit": 5000}])
@@ -131,27 +222,25 @@ def test_unknown_export_is_422(client):
 def test_profile_is_readable_by_any_signed_in_user(client):
     r = client.get("/api/v1/profile")
     assert r.status_code == 200
-    assert r.json()["focus_brand"] == "Atomberg"
-    assert "Havells" in r.json()["rivals"]
+    assert r.json()["focus_brand"] == "OnePlus"
+    assert "Samsung" in r.json()["rivals"]
 
 
 def test_admin_can_switch_profile_and_past_runs_keep_their_brands(client):
     before = client.get("/api/v1/sov").json()
     try:
-        r = client.put("/api/v1/admin/profile", json={"preset": "ather-scooters"})
+        r = client.put("/api/v1/admin/profile", json={"preset": "ev-scooters-india"})
         assert r.status_code == 200, r.text
         assert r.json()["active"]["focus_brand"] == "Ather"
         assert client.get("/api/v1/profile").json()["focus_brand"] == "Ather"
         # The stored run still reports on the brand it tracked.
         after = client.get("/api/v1/sov").json()
-        assert after["focus_brand"] == "Atomberg"
+        assert after["focus_brand"] == "OnePlus"
         assert after["report"] == before["report"]
-        # No synthetic scooter data ships, so a demo run explains what to do instead.
-        r = client.post("/api/v1/runs", json={"source": "demo"})
-        assert r.status_code == 400
-        assert "collect live YouTube data" in r.json()["detail"]
+        audit = client.get("/api/v1/admin/audit").json()
+        assert audit[0]["action"] == "profile.set" and audit[0]["target"] == "ev-scooters-india"
     finally:
-        assert client.put("/api/v1/admin/profile", json={"preset": "atomberg-fans"}).status_code == 200
+        assert client.put("/api/v1/admin/profile", json={"preset": "smartphones-india"}).status_code == 200
 
 
 def test_custom_profile_is_validated_with_a_readable_error(client):
@@ -167,19 +256,21 @@ def test_custom_profile_is_validated_with_a_readable_error(client):
     assert r.status_code == 422
     assert "must be one of the tracked brands" in r.json()["detail"][0]["msg"]
     ok = {**bad, "focus_brand": "Acme"}
-    r = client.put("/api/v1/admin/profile", json={"preset": "atomberg-fans", "profile": ok})
+    r = client.put("/api/v1/admin/profile", json={"preset": "smartphones-india", "profile": ok})
     assert r.status_code == 422 and "not both" in r.json()["detail"][0]["msg"]
     assert client.put("/api/v1/admin/profile", json={}).status_code == 422
     assert client.put("/api/v1/admin/profile", json={"preset": "nope"}).status_code == 422
-    for demo in ("../../etc/passwd", "a" * 5000, "atomberg-fans.json/.."):
-        r = client.put("/api/v1/admin/profile", json={"profile": {**ok, "demo_data": demo}})
-        assert r.status_code == 422, demo  # found by Schemathesis: a 5,000-char name was a 500
-    assert client.get("/api/v1/profile").json()["focus_brand"] == "Atomberg"
+    for name in ("a" * 5000, "x"):
+        r = client.put("/api/v1/admin/profile", json={"profile": {**ok, "name": name}})
+        assert r.status_code == 422, name  # found by Schemathesis: a 5,000-char name was a 500
+    r = client.put("/api/v1/admin/profile", json={"profile": {**ok, "demo_data": "x.json"}})
+    assert r.status_code == 422  # unknown fields are rejected
+    assert client.get("/api/v1/profile").json()["focus_brand"] == "OnePlus"
 
 
 def test_profile_admin_endpoints_need_an_admin(anon):
     assert anon.get("/api/v1/admin/profile").status_code == 401
-    assert anon.put("/api/v1/admin/profile", json={"preset": "ather-scooters"}).status_code == 401
+    assert anon.put("/api/v1/admin/profile", json={"preset": "ev-scooters-india"}).status_code == 401
 
 
 def test_405_lists_every_method_the_path_supports(client):

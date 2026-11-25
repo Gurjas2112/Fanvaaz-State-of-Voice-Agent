@@ -12,10 +12,13 @@ What changed for real-world use, and why:
 * Negation-aware: "no sparking issue at all" does not fire (the original counted
   any matching token).
 * Brand-attributed: the risk goes to the brand in the same clause, so
-  "Havells caught fire, switched to Atomberg" flags Havells, not Atomberg.
+  "Samsung caught fire, switched to OnePlus" flags Samsung, not OnePlus.
 * Each category counts once per comment, and comment likes raise the score
   logarithmically (a liked safety complaint reaches more buyers).
 * Hinglish "fir" (= "phir", then) and the name "Sue" are deliberately not terms.
+* Framing-aware: on real comments, "the thumbnail makes it look like it's on
+  fire" is about the video, not the product. A safety term in a clause that
+  talks about looks, thumbnails or hypotheticals is not a safety escalation.
 * Every flag keeps its evidence clause, so a human can verify it in seconds.
 """
 
@@ -150,10 +153,19 @@ def _negated(clause: str, start: int) -> bool:
     return any(b in NEGATORS for b in before)
 
 
+# Found on the real snapshot: safety words used about a video's framing, not the product.
+_FRAMING = re.compile(
+    r"\b(thumbnail|look(s|ing)? like|made to look|idea that|as if|meme|joke|clickbait|title)\b", re.IGNORECASE
+)
+
+
 def find_risks(text: str) -> list[RiskHit]:
     hits: list[RiskHit] = []
     for cs, ce, clause, _ in _clauses(text):
+        framed = bool(_FRAMING.search(clause))
         for cat, terms in _compiled().items():
+            if cat == "safety" and framed:
+                continue
             for term, rx in terms:
                 m = rx.search(clause)
                 if m and not _negated(clause, m.start()):
@@ -197,7 +209,7 @@ def flag_comments(videos: list[Video], mentions: list[Mention]) -> list[dict]:
                 in_clause = [sp for sp in spans if h.clause_start <= sp.start < h.clause_end]
                 if in_clause:
                     # Several brands in one clause: the risk belongs to the nearest one, preferring
-                    # the brand before the term ("Havells caught fire, switched to Atomberg").
+                    # the brand before the term ("Samsung caught fire, switched to OnePlus").
                     nearest = min(
                         in_clause,
                         key=lambda sp: abs(h.pos - sp.end) if sp.end <= h.pos else abs(sp.start - h.pos) + 25,

@@ -3,6 +3,7 @@
   const { api, el, pct, $, toast, fan } = HZ;
   let FOCUS = "";
   let inboxStatus = "open";
+  let THREAD = null;
 
   function fmtDate(iso) {
     const d = new Date(iso);
@@ -18,8 +19,8 @@
   async function loadBrief() {
     const b = await api("/api/v1/brief");
     if (!b.has_data) {
-      $("brief-sentence").textContent = "No data yet. An admin can start the first run from the admin page.";
-      return;
+      $("brief-sentence").textContent = "No data yet. An admin can start the first live collection from the admin page.";
+      return false;
     }
     FOCUS = b.focus_brand;
     HZ.setFocus(FOCUS);
@@ -40,8 +41,22 @@
       next.replaceChildren(el("strong", {}, b.action.title), b.action.text);
       next.hidden = false;
     }
-    $("demo-banner").hidden = b.run.source !== "synthetic-demo";
-    $("run-meta").textContent = `Last collected ${fmtDate(b.run.created_at)} from ${b.run.videos} result slots and ${b.run.comments.toLocaleString("en-IN")} comments.`;
+    $("run-meta").textContent = `Live YouTube data collected ${fmtDate(b.run.created_at)}: ${b.run.videos} result slots, ` +
+      `${b.run.comments.toLocaleString("en-IN")} comments, ${b.run.quota_units_used} API quota units.`;
+    $("evidence-link").href = `/api/v1/runs/${b.run.run_id}/evidence`;
+    return true;
+  }
+
+  async function checkSetup() {
+    const s = await api("/api/v1/setup");
+    const msgs = [];
+    if (!s.profile_configured) msgs.push("Nothing is tracked yet: an admin needs to choose a brand and its rivals on the admin page.");
+    else if (!s.has_data) msgs.push(s.youtube_key_set
+      ? "No collection yet: an admin can run the first live collection from the admin page."
+      : "No collection yet, and the YouTube API key is not set on the server.");
+    $("setup-banner").hidden = !msgs.length;
+    $("setup-text").textContent = msgs.join(" ");
+    return s;
   }
 
   async function loadVoice(keyword) {
@@ -135,8 +150,14 @@
 
   async function loadPlan() {
     const data = await api("/api/v1/insights");
-    $("recs").replaceChildren(...data.insights.map((i) =>
-      el("li", { "data-testid": `insight-${i.id}` }, el("strong", {}, i.title), i.text)));
+    $("recs").replaceChildren(...data.insights.map((i) => {
+      const cites = (i.citations || []).slice(0, 3).map((c, n) =>
+        el("a", { href: c.url, target: "_blank", rel: "noopener", class: "cite", "data-testid": "citation",
+          title: c.type === "comment" ? c.text : c.title }, `[${n + 1}]`));
+      const badge = i.verified ? el("span", { class: "ok", title: "Numbers checked against the evidence" }, "verified") : null;
+      return el("li", { "data-testid": `insight-${i.id}` }, el("strong", {}, i.title), i.text, " ", ...cites,
+        ...(badge ? [" ", badge] : []));
+    }));
   }
 
   async function ask(e) {
@@ -147,29 +168,61 @@
     out.textContent = "Looking through the comments…";
     out.className = "answer";
     try {
-      const data = await api("/api/v1/ask", { method: "POST", body: JSON.stringify({ question: q }) });
+      const body = THREAD ? { question: q, thread_id: THREAD } : { question: q };
+      const data = await api("/api/v1/ask", { method: "POST", body: JSON.stringify(body) });
+      THREAD = data.thread_id;
+      $("ask-new").hidden = false;
+      $("ask-thread").append(el("li", { class: "turn" }, q));
+      $("ask-input").value = "";
       out.textContent = data.answer;
       out.className = "answer" + (data.refused ? " refused" : "");
       out.dataset.refused = String(data.refused);
-      $("ask-sources").replaceChildren(...data.sources.slice(0, 5).map((s) => el("li", {}, `${s.keyword}: ${s.text}`)));
+      out.dataset.mode = data.mode;
+      const badges = [data.mode === "llm" ? "Gemini, checked" : data.mode === "guard" ? "Refused by the guardrail" : "From the data"];
+      if (data.cache && data.cache.hit) badges.push(`cached (similarity ${data.cache.similarity})`);
+      if (data.scope && data.scope.brands) badges.push(`scope: ${data.scope.brands.join(", ")}` + (data.scope.aspect ? ` · ${data.scope.aspect}` : ""));
+      if (data.fallback_reason) badges.push(`LLM answer rejected: ${data.fallback_reason}`);
+      $("ask-badges").replaceChildren(...badges.map((b) => el("span", { class: "badge" }, b)));
+      $("ask-sources").replaceChildren(...data.sources.slice(0, 6).map((s) =>
+        el("li", { "data-testid": "ask-source" }, el("span", { class: "cid" }, s.citation || ""), " ",
+          el("a", { href: `https://www.youtube.com/watch?v=${s.video_id}&lc=${s.comment_id}`, target: "_blank", rel: "noopener" }, s.text))));
+      $("ask-steps").replaceChildren(...(data.reasoning_steps || []).map((s) => el("li", {}, s)));
+      $("ask-reasoning").hidden = !(data.reasoning_steps || []).length;
     } catch (err) {
       out.textContent = err.message;
     }
+  }
+
+  function newConversation() {
+    if (THREAD) api(`/api/v1/ask/threads/${THREAD}`, { method: "DELETE" }).catch(() => {});
+    THREAD = null;
+    $("ask-thread").replaceChildren();
+    $("ask-answer").textContent = "";
+    $("ask-badges").replaceChildren();
+    $("ask-sources").replaceChildren();
+    $("ask-reasoning").hidden = true;
+    $("ask-new").hidden = true;
   }
 
   async function loadProfile() {
     const p = await api("/api/v1/profile");
     document.title = `Fanvaaz: ${p.name}`;
     $("ask-input").placeholder = `What do people say about ${p.focus_brand} and its ${p.category}?`;
+    const rival = p.rivals[0] || p.focus_brand;
+    const qs = [`Why do people complain about ${p.focus_brand}?`, `${p.focus_brand} vs ${rival} on price`, `What do viewers praise about ${rival}?`];
+    $("ask-suggest").replaceChildren(...qs.map((q) => el("button", { type: "button", class: "pill", "data-testid": "suggestion",
+      onclick: () => { $("ask-input").value = q; $("ask-form").requestSubmit(); } }, q)));
   }
 
   async function init() {
     $("signout").addEventListener("click", HZ.signOut);
     $("ask-form").addEventListener("submit", ask);
+    $("ask-new").addEventListener("click", newConversation);
     try {
-      await Promise.all([loadMe(), loadProfile()]);
-      await loadBrief();
-      await Promise.all([loadKeywords(), initInbox(), loadPlan()]);
+      await loadMe();
+      const setup = await checkSetup();
+      if (setup.profile_configured) await loadProfile();
+      if (setup.has_data && await loadBrief()) await Promise.all([loadKeywords(), initInbox(), loadPlan()]);
     } catch (e) {
       if (e.message !== "Signed out") $("brief-sentence").textContent = e.message;
     }

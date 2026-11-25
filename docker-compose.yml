@@ -1,13 +1,35 @@
+# Local production-like stack: the FastAPI app on PostgreSQL 16 + pgvector (as on Cloud SQL).
+#   cp .env.example .env   # add your YouTube (and optional Gemini) key
+#   docker compose up --build
 services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: fanvaaz
+      POSTGRES_USER: fanvaaz
+      POSTGRES_PASSWORD: fanvaaz-local-only
+    volumes:
+      - fanvaaz-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fanvaaz -d fanvaaz"]
+      interval: 3s
+      retries: 20
+
   api:
     build: .
     ports: ["8000:8000"]
     env_file:
       - path: .env
         required: false
+    environment:
+      FANVAAZ_DATABASE_URL: postgresql://fanvaaz:fanvaaz-local-only@db:5432/fanvaaz
+    depends_on:
+      db:
+        condition: service_healthy
     volumes:
       - fanvaaz-data:/app/data
     restart: unless-stopped
 
 volumes:
+  fanvaaz-pg:
   fanvaaz-data:

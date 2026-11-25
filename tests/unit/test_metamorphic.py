@@ -12,7 +12,7 @@ from fanvaaz.models import Comment, Video
 from fanvaaz.sov import compute
 
 S = Settings()
-BRANDS = ["Atomberg", "Havells", "Crompton", "Orient", "Usha"]
+BRANDS = ["OnePlus", "Samsung", "Xiaomi", "Realme", "Vivo"]
 PHRASES = [
     "{b} is great",
     "{b} is noisy",
@@ -39,7 +39,7 @@ def dataset(draw):
         videos.append(
             Video(
                 video_id=f"v{i}",
-                keyword="smart fan",
+                keyword="smart phone",
                 rank=i + 1,
                 title=draw(comment_text),
                 view_count=draw(st.integers(0, 10**7)),
@@ -80,8 +80,8 @@ def test_alias_spelling_does_not_change_sov(videos):
     before = sov_map(videos)
     for vid in videos:
         for c in vid.comments:
-            c.text = c.text.replace("Atomberg", "atom berg")
-        vid.title = vid.title.replace("Atomberg", "ATOMBERG")
+            c.text = c.text.replace("OnePlus", "one plus")
+        vid.title = vid.title.replace("OnePlus", "ONEPLUS")
     assert sov_map(videos) == before
 
 

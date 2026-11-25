@@ -17,3 +17,27 @@ playwright-report/
 build/
 dist/
 .schemathesis/
+
+# Personal reference material and private documents: never published
+docs/AI_Engineering_Notes/
+docs/reference_images/
+docs/*.pdf
+langgraph_config.txt
+job_form_details.txt
+
+# Agent checkpoints and local databases
+*.db
+*.db-journal
+checkpoints.db
+
+# Android build outputs (the signed APK is published under app_screenshots_screen_recording/)
+mobile/node_modules/
+mobile/android/app/build/
+mobile/android/build/
+mobile/android/.gradle/
+mobile/android/local.properties
+*.keystore
+*.jks
+.deepeval/
+
+mobile/android/keystore.properties

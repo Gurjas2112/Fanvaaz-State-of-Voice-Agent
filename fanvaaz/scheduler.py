@@ -26,16 +26,16 @@ def next_fire(now: datetime, at: str) -> datetime:
 
 def claim(store: Store, day: str) -> bool:
     with store._conn() as c:
-        c.execute("CREATE TABLE IF NOT EXISTS schedule_claims (day TEXT PRIMARY KEY)")
-        return c.execute("INSERT OR IGNORE INTO schedule_claims VALUES (?)", (day,)).rowcount == 1
+        return (
+            c.execute("INSERT INTO schedule_claims VALUES (?) ON CONFLICT DO NOTHING", (day,)).rowcount == 1
+        )
 
 
 async def daily_loop(settings: Settings, store: Store) -> None:
     from .pipeline import run
 
     tz = ZoneInfo(settings.timezone)
-    source = settings.daily_run_source
-    if source == "youtube" and not settings.youtube_api_key:
+    if not settings.youtube_api_key:
         log.warning("daily run disabled: FANVAAZ_YOUTUBE_API_KEY is not set")
         return
     while True:
@@ -44,7 +44,9 @@ async def daily_loop(settings: Settings, store: Store) -> None:
         await asyncio.sleep((fire - now).total_seconds())
         if claim(store, fire.date().isoformat()):
             try:
-                info = await asyncio.to_thread(run, source=source, settings=settings, store=store)
+                info = await asyncio.to_thread(
+                    run, source="youtube", settings=settings, store=store, actor="scheduler"
+                )
                 log.info("daily run %s done", info.run_id)
             except Exception:  # noqa: BLE001 - keep the loop alive; the failure is logged
                 log.exception("daily run failed")

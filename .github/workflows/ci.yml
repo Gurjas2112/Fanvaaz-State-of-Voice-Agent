@@ -32,6 +32,26 @@ jobs:
         if: always()
         with: { name: offline-reports, path: reports/ }
 
+  postgres:
+    name: Same suite on PostgreSQL 16 + pgvector
+    runs-on: ubuntu-latest
+    needs: offline-gates
+    services:
+      pg:
+        image: pgvector/pgvector:pg16
+        env: { POSTGRES_PASSWORD: fanvaaz, POSTGRES_DB: fanvaaz }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 3s --health-retries 20
+    env:
+      FANVAAZ_TEST_DATABASE_URL: postgresql://postgres:fanvaaz@127.0.0.1:5432/fanvaaz
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ env.PYTHON_VERSION }}", cache: pip }
+      - run: pip install -e ".[dev]"
+      - run: pytest -m "not e2e and not mobile and not llm"
+
   live-api:
     name: Newman, promptfoo, k6, Schemathesis (live server)
     runs-on: ubuntu-latest
@@ -45,10 +65,11 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "22" }
       - run: pip install -e ".[fuzz]"
-      - name: Seed and start the API
+      - name: Seed from the recorded real collection and start the API
+        env: { FANVAAZ_PROFILE: smartphones-india }
         run: |
-          fanvaaz run --source demo
-          nohup fanvaaz serve --port 8000 > server.log 2>&1 &
+          fanvaaz run --source replay --snapshot tests/fixtures/youtube_snapshot/smartphones-india.json
+          FANVAAZ_PROFILE=smartphones-india nohup fanvaaz serve --port 8000 > server.log 2>&1 &
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/health && break; sleep 1; done
       - name: Postman collection (Newman)
         run: npx --yes newman run postman/Fanvaaz.postman_collection.json -e postman/local.postman_environment.json --env-var apiToken=$FANVAAZ_API_TOKEN
@@ -63,7 +84,7 @@ jobs:
       - name: Schemathesis contract fuzzing
         run: >-
           schemathesis run http://127.0.0.1:8000/openapi.json --checks all --max-examples 40
-          --exclude-path /api/v1/runs -H "Authorization: Bearer $FANVAAZ_API_TOKEN" -H "X-Requested-With: fanvaaz"
+          --exclude-path /api/v1/runs --exclude-path /api/v1/runs/jobs -H "Authorization: Bearer $FANVAAZ_API_TOKEN" -H "X-Requested-With: fanvaaz"
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: live-api-reports, path: "reports/\nserver.log" }
@@ -101,10 +122,11 @@ jobs:
       - run: pip install -e ".[dev,mobile]"
       - name: Install Appium
         run: npm install -g appium && appium driver install uiautomator2
-      - name: Seed and start the API
+      - name: Seed from the recorded real collection and start the API
+        env: { FANVAAZ_PROFILE: smartphones-india }
         run: |
-          fanvaaz run --source demo
-          nohup fanvaaz serve --host 0.0.0.0 --port 8000 > server.log 2>&1 &
+          fanvaaz run --source replay --snapshot tests/fixtures/youtube_snapshot/smartphones-india.json
+          FANVAAZ_PROFILE=smartphones-india nohup fanvaaz serve --host 0.0.0.0 --port 8000 > server.log 2>&1 &
       - name: Run Appium tests on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -128,7 +150,7 @@ jobs:
     env:
       FANVAAZ_LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
       FANVAAZ_LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-      FANVAAZ_LLM_MODEL: ${{ vars.LLM_MODEL || 'llama-3.3-70b-versatile' }}
+      FANVAAZ_LLM_MODEL: ${{ vars.LLM_MODEL || 'gemini-flash-latest' }}
       DEEPEVAL_TELEMETRY_OPT_OUT: "YES"
     steps:
       - uses: actions/checkout@v4

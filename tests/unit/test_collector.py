@@ -23,7 +23,7 @@ def fake_youtube(request: httpx.Request) -> httpx.Response:
             {
                 "id": i,
                 "snippet": {
-                    "title": f"Title {i} &amp; Atomberg",
+                    "title": f"Title {i} &amp; OnePlus",
                     "channelTitle": "Ch",
                     "description": "call 9876543210",
                 },
@@ -45,7 +45,7 @@ def fake_youtube(request: httpx.Request) -> httpx.Response:
                             "topLevelComment": {
                                 "id": "c1",
                                 "snippet": {
-                                    "textDisplay": "Atomberg is great, mail x@y.com",
+                                    "textDisplay": "OnePlus is great, mail x@y.com",
                                     "likeCount": 3,
                                     "authorChannelId": {"value": "UC123"},
                                 },
@@ -65,24 +65,24 @@ def collector(tmp_path, handler=fake_youtube):
 
 def test_collect_ranks_stats_and_quota(tmp_path):
     col = collector(tmp_path)
-    videos = col.collect(["smart fan"])
+    videos = col.collect(["smart phone"])
     assert [v.video_id for v in videos] == ["v1", "v2"]  # search order kept, deleted video skipped
     assert [v.rank for v in videos] == [1, 2]
-    assert videos[0].title == "Title v1 & Atomberg"
+    assert videos[0].title == "Title v1 & OnePlus"
     assert videos[1].comments == []  # comments disabled handled, not an error
     assert col.units == 100 + 1 + 1  # search + videos + one successful commentThreads
 
 
 def test_pii_redacted_at_ingestion(tmp_path):
-    v = collector(tmp_path).collect(["smart fan"])[0]
+    v = collector(tmp_path).collect(["smart phone"])[0]
     assert not contains_pii(v.description)
     assert not contains_pii(v.comments[0].text)
     assert v.comments[0].author_hash and "UC123" not in v.comments[0].author_hash
 
 
 def test_raw_responses_saved_for_replay(tmp_path):
-    collector(tmp_path).collect(["smart fan"])
-    saved = json.loads((tmp_path / "search_smart fan.json").read_text())
+    collector(tmp_path).collect(["smart phone"])
+    saved = json.loads((tmp_path / "search_smart phone.json").read_text())
     assert len(saved["items"]) == 3
 
 
@@ -91,7 +91,7 @@ def test_quota_exceeded_is_raised(tmp_path):
         return httpx.Response(403, text='{"error":{"errors":[{"reason":"quotaExceeded"}]}}')
 
     with pytest.raises(QuotaExceeded):
-        collector(tmp_path, handler).collect(["smart fan"])
+        collector(tmp_path, handler).collect(["smart phone"])
 
 
 def test_missing_key_fails_fast():

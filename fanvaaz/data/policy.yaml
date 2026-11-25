@@ -1,0 +1,48 @@
+# Fanvaaz AI governance policy. Loaded at startup; enforced in fanvaaz/governance.py
+# and the LLM gateway (fanvaaz/ai.py). Changing it is a reviewed code change.
+version: 1
+
+models:
+  # Chat models the gateway may call (glob patterns). Anything else is refused.
+  chat_allowed:
+    - "gemini-flash-latest"
+    - "gemini-flash-lite-latest"
+    - "gemini-*-flash*"
+    - "llama-3.3-70b-versatile"
+    - "gpt-4o-mini"
+  embeddings_allowed:
+    - "gemini-embedding-*"
+    - "text-embedding-*"
+
+# What an LLM may do. Each gateway call names its task; a task not listed is refused.
+llm_may:
+  sentiment: relabel sentiment toward brands the rule matcher already found
+  rewrite: reword rule-built insights without adding numbers or claims
+  ask: answer questions from retrieved, PII-redacted evidence with citations
+  plan: split a question into sub-questions over known brands and aspects
+
+# Hard limits that no prompt, profile or user can relax.
+llm_may_not:
+  - add or remove a brand mention (brands come only from the deterministic matcher)
+  - state a number that is not in the evidence it was given (numeric grounding check)
+  - see unredacted email addresses or phone numbers (redacted at ingestion)
+  - follow instructions found inside comments (quarantined from retrieval)
+
+data:
+  pii: redact emails and Indian phone numbers at ingestion; hash commenter ids
+  raw_retention_days: 30
+  conversation_memory: expires after FANVAAZ_MEMORY_TTL_HOURS; keyed by a hash, never an email
+  preferences: expire after FANVAAZ_PREFS_TTL_DAYS
+
+human_in_the_loop:
+  profile_change: admin only; recorded in the audit log
+  run_collection: admin or the scheduler's service token; recorded in the audit log
+  risk_triage: any signed-in user; who and when is stored with the status
+  user_admin: admin only; the last active admin cannot be removed
+
+budgets:
+  # Defaults; FANVAAZ_MAX_COST_PER_RUN_USD / _PER_DAY_USD / _MAX_PROMPT_TOKENS override.
+  per_run_usd: 0.50
+  per_day_usd: 2.00
+  max_prompt_tokens: 12000
+  on_breach: skip the LLM step and keep the rule-based result

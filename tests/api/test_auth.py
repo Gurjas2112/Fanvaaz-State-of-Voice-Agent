@@ -63,10 +63,10 @@ def test_signup_domain_allow_list(anon, monkeypatch):
     from fanvaaz import api
 
     acc = api._accounts[next(iter(api._accounts))]
-    monkeypatch.setattr(acc.s, "signup_domains", "atomberg.com")
+    monkeypatch.setattr(acc.s, "signup_domains", "oneplus.com")
     r = signup(anon, "someone@gmail.com")
-    assert r.status_code == 403 and "@atomberg.com" in r.json()["detail"]
-    assert signup(anon, f"x{uuid.uuid4().hex[:6]}@atomberg.com").status_code == 201
+    assert r.status_code == 403 and "@oneplus.com" in r.json()["detail"]
+    assert signup(anon, f"x{uuid.uuid4().hex[:6]}@oneplus.com").status_code == 201
 
 
 def test_login_logout_flow(anon):
@@ -101,7 +101,7 @@ def test_brute_force_is_throttled(anon):
 def test_csrf_header_required_for_cookie_writes(anon):
     signup(anon)
     r = anon.post(
-        "/api/v1/ask", json={"question": "Why do people like Atomberg?"}, headers={"X-Requested-With": ""}
+        "/api/v1/ask", json={"question": "Why do people like OnePlus?"}, headers={"X-Requested-With": ""}
     )
     assert r.status_code == 403
     anon.headers.pop("X-Requested-With")
@@ -172,7 +172,7 @@ def test_deactivated_user_loses_session(anon, client):
 
 def test_admin_runs_and_system(client):
     runs = client.get("/api/v1/admin/runs").json()
-    assert runs and runs[0]["source"] == "synthetic-demo"
+    assert runs and runs[0]["source"] == "replay"
     sysinfo = client.get("/api/v1/admin/system").json()
     assert sysinfo["youtube_key_set"] is False and sysinfo["daily_quota"] == 10_000
 
@@ -184,20 +184,27 @@ def test_security_headers(client):
 
 
 # ---- daily use: brief, risk inbox -----------------------------------------
-def test_brief_compares_with_previous_run(client):
+def test_brief_compares_with_previous_run(client, seeded_store):
+    from pathlib import Path
+
+    from fanvaaz.pipeline import run
+    from fanvaaz.service import clear_answerers
+
     first = client.get("/api/v1/brief").json()
-    assert first["has_data"] and first["sentence"].startswith("Atomberg holds")
-    assert client.post("/api/v1/runs", json={"source": "demo"}).status_code == 201
+    assert first["has_data"] and first["sentence"].startswith("OnePlus holds")
+    snapshot = Path(__file__).parents[1] / "fixtures" / "youtube_snapshot" / "smartphones-india.json"
+    run(source="replay", snapshot=snapshot, store=seeded_store, use_llm=False)  # same real data again
+    clear_answerers()
     second = client.get("/api/v1/brief").json()
     assert second["previous_run_id"] == first["run"]["run_id"]
-    assert second["sov_delta"] == pytest.approx(0.0, abs=1e-9)  # same demo data -> flat
+    assert second["sov_delta"] == pytest.approx(0.0, abs=1e-9)  # same data -> flat
     assert "flat since the last run" in second["sentence"]
     assert second["new_high_risks"] == 0  # nothing new since the previous run
 
 
 def test_risk_triage_persists_and_filters(client):
     open_flags = client.get(
-        "/api/v1/risks", params={"brand": "Atomberg", "status": "open", "limit": 3}
+        "/api/v1/risks", params={"brand": "OnePlus", "status": "open", "limit": 3}
     ).json()["flags"]
     f = open_flags[0]
     r = client.patch(
@@ -210,10 +217,10 @@ def test_risk_triage_persists_and_filters(client):
         },
     )
     assert r.status_code == 200 and r.json()["updated_by"] == "service@fanvaaz.local"
-    handled = client.get("/api/v1/risks", params={"brand": "Atomberg", "status": "handled"}).json()["flags"]
+    handled = client.get("/api/v1/risks", params={"brand": "OnePlus", "status": "handled"}).json()["flags"]
     assert any(h["comment_id"] == f["comment_id"] for h in handled)
     still_open = client.get(
-        "/api/v1/risks", params={"brand": "Atomberg", "status": "open", "limit": 1000}
+        "/api/v1/risks", params={"brand": "OnePlus", "status": "open", "limit": 1000}
     ).json()
     assert all(x["comment_id"] != f["comment_id"] for x in still_open["flags"])
     before = client.get("/api/v1/brief").json()["open_risks"]
@@ -225,7 +232,7 @@ def test_risk_triage_persists_and_filters(client):
 
 def test_risk_status_validation(client):
     r = client.patch(
-        "/api/v1/risks/status", json={"comment_id": "x", "brand": "Atomberg", "status": "deleted"}
+        "/api/v1/risks/status", json={"comment_id": "x", "brand": "OnePlus", "status": "deleted"}
     )
     assert r.status_code == 422
 

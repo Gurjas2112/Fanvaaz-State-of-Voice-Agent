@@ -24,18 +24,18 @@ pytestmark = pytest.mark.llm
 
 BASE = os.getenv("FANVAAZ_LLM_BASE_URL") or os.getenv("LLM_EVAL_BASE_URL")
 KEY = os.getenv("FANVAAZ_LLM_API_KEY") or os.getenv("LLM_EVAL_API_KEY")
-MODEL = os.getenv("FANVAAZ_LLM_MODEL", "llama-3.3-70b-versatile")
-JUDGE = os.getenv("FANVAAZ_JUDGE_MODEL", MODEL)
+MODEL = os.getenv("LLM_EVAL_MODEL") or os.getenv("FANVAAZ_LLM_MODEL") or "gemini-flash-latest"
+JUDGE = os.getenv("FANVAAZ_JUDGE_MODEL") or MODEL
 
 if not (BASE and KEY):
     pytest.skip("LLM evals need FANVAAZ_LLM_BASE_URL and FANVAAZ_LLM_API_KEY", allow_module_level=True)
 
 QUESTIONS = [
-    "Why do people complain about Atomberg?",
-    "What do viewers like about Atomberg fans?",
-    "How does Atomberg compare with Havells on noise?",
-    "What do people say about the Atomberg remote?",
-    "Which brand leads on BLDC fan?",
+    "Why do people complain about OnePlus?",
+    "What do viewers like about OnePlus phones?",
+    "How does OnePlus compare with Samsung on battery?",
+    "What do people say about the Samsung camera?",
+    "Which brand leads on best camera phone India?",
 ]
 
 
@@ -109,7 +109,8 @@ def test_deepeval_faithfulness_and_relevancy(answered, reports_dir):
             }
         results.append({"question": row["question"], "mode": row["mode"], "scores": scores})
     (reports_dir / "deepeval.json").write_text(
-        json.dumps({"deepeval": deepeval.__version__, "judge": JUDGE, "results": results}, indent=2)
+        json.dumps({"deepeval": deepeval.__version__, "judge": JUDGE, "results": results}, indent=2),
+        encoding="utf-8",
     )
     faith = [r["scores"]["FaithfulnessMetric"]["score"] for r in results]
     assert sum(faith) / len(faith) >= 0.8, results
@@ -136,7 +137,9 @@ def test_deepeval_geval_recommendations_are_actionable(latest, reports_dir):
     for r in recs:
         metric.measure(LLMTestCase(input=json.dumps(r["evidence"]), actual_output=r["text"]))
         scores.append(metric.score)
-    (reports_dir / "geval.json").write_text(json.dumps({"scores": scores, "recommendations": recs}, indent=2))
+    (reports_dir / "geval.json").write_text(
+        json.dumps({"scores": scores, "recommendations": recs}, indent=2), encoding="utf-8"
+    )
     assert sum(scores) / len(scores) >= 0.6
 
 
@@ -160,6 +163,6 @@ def test_ragas_faithfulness_and_context_precision(answered, reports_dir):
     df = result.to_pandas()
     summary = {c: float(df[c].mean()) for c in df.columns if df[c].dtype.kind == "f"}
     (reports_dir / "ragas.json").write_text(
-        json.dumps({"ragas": ragas.__version__, "summary": summary}, indent=2)
+        json.dumps({"ragas": ragas.__version__, "summary": summary}, indent=2), encoding="utf-8"
     )
     assert summary.get("faithfulness", 0) >= 0.8

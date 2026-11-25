@@ -1,0 +1,17 @@
+{
+  "appId": "app.fanvaaz.sov",
+  "appName": "Fanvaaz",
+  "webDir": "www",
+  "server": {
+    "url": "https://fanvaaz.example.invalid/app",
+    "cleartext": false,
+    "allowNavigation": [
+      "fanvaaz.example.invalid"
+    ]
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  }
+}

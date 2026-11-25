@@ -1,8 +1,11 @@
-"""FastAPI service: pages, auth, JSON API.
+"""FastAPI service: pages, auth, JSON API, MCP and ops endpoints.
 
 Pages   /  /login  /signup  /app (signed in)  /admin (admins)
 API     /api/v1/...  (signed-in session cookie, or `Authorization: Bearer <FANVAAZ_API_TOKEN>`)
-Docs    /docs (OpenAPI). Postman, Schemathesis, Playwright, Appium and promptfoo run against this app.
+MCP     /mcp (streamable HTTP, Bearer FANVAAZ_MCP_TOKEN or FANVAAZ_API_TOKEN)
+Ops     /health (liveness)  /ready (dependencies)  /metrics (Prometheus, admin)
+Docs    /docs (OpenAPI; admin-only when FANVAAZ_PUBLIC_DOCS=false). Postman, Schemathesis,
+        Playwright, Appium and promptfoo run against this app.
 """
 
 from __future__ import annotations
@@ -11,37 +14,47 @@ import asyncio
 import csv
 import io
 import logging
+import threading
 import time
+import uuid
+from collections import deque
 from contextlib import asynccontextmanager
-from functools import lru_cache
+from datetime import UTC, datetime
 from pathlib import Path as FilePath
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from . import __version__
+from . import __version__, obs, prompts
 from . import profile as profile_mod
-from .ask import Answerer
 from .auth import COOKIE, CSRF_HEADER, CSRF_VALUE, EMAIL_PATTERN, Accounts, AuthError, User
 from .brief import build_brief
-from .config import get_settings
-from .llm import get_llm
+from .evidence import pack as evidence_pack
+from .governance import Governance, audit, audit_log
+from .memory import Memory, user_key
 from .models import KeywordReport, RunInfo
+from .pipeline import new_run_id
 from .pipeline import run as run_pipeline
 from .risk import RISK_CATEGORIES, summarize
+from .service import answerer_for, clear_answerers, default_store
 from .store import Store
 
 log = logging.getLogger("fanvaaz.api")
 STATIC = FilePath(__file__).parent / "static"
 
 
-@lru_cache
+def get_settings():  # re-exported so tests and ops code can patch one place
+    from .config import get_settings as _gs
+
+    return _gs()
+
+
 def get_store() -> Store:
-    return Store(get_settings().db_path)
+    return default_store()
 
 
 _accounts: dict[int, Accounts] = {}
@@ -54,18 +67,44 @@ def get_accounts(store: Store = Depends(get_store)) -> Accounts:
     return _accounts[key]
 
 
+def _mcp_app():
+    try:
+        from .mcp_server import http_app, mcp
+
+        return http_app(), mcp
+    except Exception:  # noqa: BLE001 - the API must start even if the MCP SDK is missing
+        log.exception("MCP server disabled")
+        return None, None
+
+
+MCP_APP, MCP = _mcp_app()
+_mcp_started = False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     s = get_settings()
+    obs.configure_logging(json_logs=s.log_json)
     store = app.dependency_overrides.get(get_store, get_store)()
+    obs.bind(store)
     get_accounts(store).ensure_admin()
-    profile_mod.sync_from(store)
+    try:
+        profile_mod.sync_from(store)
+    except profile_mod.NoProfileError:
+        log.warning("no tracking profile yet: an admin must choose one on /admin")
     task = None
     if s.daily_run_at:
         from .scheduler import daily_loop
 
         task = asyncio.create_task(daily_loop(s, store))
-    yield
+    global _mcp_started
+    if MCP is not None and not _mcp_started:
+        # The MCP session manager can run once per process (tests open several app clients).
+        _mcp_started = True
+        async with MCP.session_manager.run():
+            yield
+    else:
+        yield
     if task:
         task.cancel()
 
@@ -73,15 +112,19 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Fanvaaz API",
     version=__version__,
-    description="Daily YouTube Share of Voice for any brand: risk inbox and guarded Q&A.",
+    description=(
+        "Daily YouTube Share of Voice for any brand: LangGraph collection and Ask agents, hybrid RAG, "
+        "risk inbox, evidence packs, AI governance and observability."
+    ),
     lifespan=lifespan,
 )
 
 CSP = (
     "default-src 'self'; style-src 'self'; font-src 'self'; "
-    "img-src 'self' data:; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
-    "form-action 'self'"
+    "img-src 'self' data: https://i.ytimg.com; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; "
+    "base-uri 'self'; form-action 'self'; manifest-src 'self'; worker-src 'self'"
 )
+DOC_PATHS = ("/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect")
 
 
 def _allowed_methods(path: str) -> list[str]:
@@ -92,9 +135,23 @@ def _allowed_methods(path: str) -> list[str]:
     return sorted(methods)
 
 
+def _request_user(request: Request) -> User | None:
+    store = app.dependency_overrides.get(get_store, get_store)()
+    acc = get_accounts(store)
+    return acc.user_for_bearer(request.headers.get("authorization")) or acc.user_for_token(
+        request.cookies.get(COOKIE)
+    )
+
+
 @app.middleware("http")
 async def headers(request: Request, call_next):
     t0 = time.perf_counter()
+    if request.url.path in DOC_PATHS and not get_settings().public_docs:
+        user = await asyncio.to_thread(_request_user, request)
+        if user is None or user.role != "admin":
+            return JSONResponse(
+                status_code=401, content={"detail": "API docs are for admins. Sign in first."}
+            )
     response = await call_next(request)
     response.headers["X-Response-Time-ms"] = f"{(time.perf_counter() - t0) * 1000:.1f}"
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -104,7 +161,7 @@ async def headers(request: Request, call_next):
         # Starlette lists only the first matching route's methods; GET and PUT on
         # /api/v1/admin/profile are two routes, so build Allow from all of them.
         response.headers["Allow"] = ", ".join(_allowed_methods(request.url.path))
-    if not request.url.path.startswith(("/docs", "/redoc", "/openapi")):
+    if not request.url.path.startswith(("/docs", "/redoc", "/openapi", "/mcp")):
         response.headers["Content-Security-Policy"] = CSP
     return response
 
@@ -112,6 +169,11 @@ async def headers(request: Request, call_next):
 @app.exception_handler(AuthError)
 async def auth_error(request: Request, exc: AuthError):
     return JSONResponse(status_code=exc.status, content={"detail": exc.message})
+
+
+@app.exception_handler(profile_mod.NoProfileError)
+async def no_profile(request: Request, exc: profile_mod.NoProfileError):
+    return JSONResponse(status_code=409, content={"detail": str(exc), "setup_required": True})
 
 
 @app.exception_handler(Exception)
@@ -151,21 +213,26 @@ def csrf_for_anonymous(request: Request) -> None:
 def latest_or_404(store: Store = Depends(get_store), _: User = Depends(current_user)) -> RunInfo:
     info = store.latest_run()
     if not info:
-        raise HTTPException(404, "No data yet. An admin can start a run from the admin page.")
+        raise HTTPException(404, "No data yet. An admin can start a live collection from the admin page.")
     return info
 
 
-_answerers: dict[str, Answerer] = {}
+# Abuse control on the one endpoint that can spend LLM tokens: a per-user sliding window.
+_ask_hits: dict[int | str, deque] = {}
+_ask_lock = threading.Lock()
 
 
-def answerer_for(info: RunInfo, store: Store) -> Answerer:
-    if info.run_id not in _answerers:
-        _answerers.clear()
-        reports = {k: store.report(info.run_id, k) for k in store.keywords(info.run_id)}
-        _answerers[info.run_id] = Answerer(
-            store.videos(info.run_id), store.mentions(info.run_id), reports, get_llm()
-        )
-    return _answerers[info.run_id]
+def ask_rate_limit(user: User = Depends(current_user)) -> User:
+    limit = get_settings().ask_rate_per_min
+    now = time.monotonic()
+    with _ask_lock:
+        q = _ask_hits.setdefault(user.id, deque())
+        while q and q[0] < now - 60:
+            q.popleft()
+        if len(q) >= limit:
+            raise HTTPException(429, f"Too many questions: the limit is {limit} a minute.")
+        q.append(now)
+    return user
 
 
 # ---- schemas -----------------------------------------------------------------
@@ -196,6 +263,12 @@ class Health(BaseModel):
     version: str
     has_data: bool
     llm_configured: bool
+    profile_configured: bool
+
+
+class Ready(BaseModel):
+    ready: bool
+    checks: dict[str, Any]
 
 
 class UserOut(BaseModel):
@@ -231,10 +304,14 @@ class SovResponse(BaseModel):
     report: KeywordReport
 
 
+THREAD = r"^[a-f0-9]{8,32}$"
+
+
 class AskRequest(StrictIn):
     question: str = Field(
-        min_length=1, max_length=1000, examples=["Why do people complain about the remote?"]
+        min_length=1, max_length=1000, examples=["Why do people complain about the battery?"]
     )
+    thread_id: str | None = Field(default=None, pattern=THREAD, description="Continue a conversation")
 
 
 class Source(BaseModel):
@@ -242,6 +319,12 @@ class Source(BaseModel):
     video_id: str
     keyword: str
     text: str
+    citation: str | None = None
+    score: float | None = None
+    lexical_rank: int | None = None
+    vector_rank: int | None = None
+    features: dict[str, float] = Field(default_factory=dict)
+    for_brand: str | None = None
 
 
 class AskResponse(BaseModel):
@@ -250,11 +333,31 @@ class AskResponse(BaseModel):
     reasons: list[str]
     mode: Literal["guard", "extractive", "llm"]
     sources: list[Source]
+    citations: list[str] = Field(default_factory=list)
+    scope: dict[str, Any] | None = None
+    reasoning_steps: list[str] = Field(default_factory=list)
+    context: dict[str, Any] = Field(default_factory=dict)
+    cache: dict[str, Any] = Field(default_factory=dict)
+    risk_score: float = 0.0
+    rejected_llm_answer: bool = False
+    fallback_reason: str | None = None
+    thread_id: str | None = None
+    trace_id: str | None = None
 
 
 class RunRequest(StrictIn):
-    source: Literal["youtube", "demo"] = "demo"
+    source: Literal["youtube"] = "youtube"
     keywords: list[str] | None = Field(default=None, max_length=10)
+
+
+class JobOut(BaseModel):
+    job_id: str
+    status: Literal["queued", "running", "done", "failed"]
+    started_at: str
+    finished_at: str | None = None
+    run_id: str | None = None
+    error: str | None = None
+    progress: str | None = None
 
 
 class ProfileSummary(BaseModel):
@@ -270,7 +373,7 @@ PresetId = Literal[tuple(profile_mod.presets())]  # type: ignore[valid-type]
 
 
 class ProfilePut(StrictIn):
-    """Either switch to a preset, or save a full custom profile."""
+    """Either switch to a template, or save a full custom profile."""
 
     preset: PresetId | None = None
     profile: profile_mod.Profile | None = None
@@ -283,10 +386,15 @@ class ProfilePut(StrictIn):
 
 
 class ProfileAdmin(BaseModel):
-    active: profile_mod.Profile
+    active: profile_mod.Profile | None
     updated_by: str | None
     updated_at: str | None
     presets: list[ProfileSummary]
+
+
+class PrefsIn(StrictIn):
+    brands: list[str] = Field(default_factory=list, max_length=10)
+    aspects: list[str] = Field(default_factory=list, max_length=10)
 
 
 def _summary(p: profile_mod.Profile) -> ProfileSummary:
@@ -402,7 +510,7 @@ def me(user: User = Depends(current_user)) -> dict:
     return user.public()
 
 
-# ---- data endpoints ----------------------------------------------------------
+# ---- ops ---------------------------------------------------------------------
 @app.get("/health", response_model=Health, tags=["ops"])
 def health(store: Store = Depends(get_store)) -> Health:
     s = get_settings()
@@ -410,10 +518,71 @@ def health(store: Store = Depends(get_store)) -> Health:
         status="ok",
         version=__version__,
         has_data=store.latest_run() is not None,
-        llm_configured=bool(s.llm_base_url and s.llm_api_key),
+        llm_configured=s.llm_configured,
+        profile_configured=profile_mod.configured() or store.saved_profile() is not None,
     )
 
 
+@app.get("/ready", response_model=Ready, tags=["ops"], responses={503: {"model": Ready}})
+def ready(store: Store = Depends(get_store)) -> Response:
+    """Readiness: database reachable and migrated; YouTube key and LLM configuration reported."""
+    s = get_settings()
+    checks: dict[str, Any] = {
+        "database": store.db.ping(),
+        "database_backend": store.db.label,
+        "schema_version": store.db.schema_version() if store.db.ping() else None,
+        "youtube_key": bool(s.youtube_api_key),
+        "llm": "configured" if s.llm_configured else "off (rules only)",
+        "llm_enabled": s.llm_enabled,
+        "profile": profile_mod.configured() or store.saved_profile() is not None,
+    }
+    ok = bool(checks["database"])
+    return JSONResponse(status_code=200 if ok else 503, content={"ready": ok, "checks": checks})
+
+
+@app.get("/metrics", tags=["ops"], responses={**ADMIN, 200: {"content": {"text/plain": {}}}})
+def metrics(store: Store = Depends(get_store), _: User = Depends(require_admin)) -> PlainTextResponse:
+    """Prometheus text format: LLM calls, tokens, cost, schema-valid ratio, node latency."""
+    return PlainTextResponse(obs.prometheus(store), media_type="text/plain; version=0.0.4")
+
+
+@app.get("/api/v1/public/preview", tags=["ops"])
+def public_preview(store: Store = Depends(get_store)) -> dict:
+    """The landing page's live chart: overall share of voice from the latest real collection.
+
+    Aggregates only (brand names and shares of public YouTube data); no comments, no users.
+    Turn off with FANVAAZ_PUBLIC_PREVIEW=false.
+    """
+    s = get_settings()
+    info = store.latest_run() if s.public_preview else None
+    if info is None:
+        return {"available": False}
+    rep = store.report(info.run_id, "all")
+    return {
+        "available": True,
+        "focus_brand": info.focus_brand,
+        "collected_at": info.created_at,
+        "videos": info.videos,
+        "comments": info.comments,
+        "brands": [{"brand": b.brand, "sov": round(b.sov, 4)} for b in (rep.brands if rep else [])][:10],
+    }
+
+
+@app.get("/api/v1/setup", tags=["ops"], responses=AUTH)
+def setup_status(store: Store = Depends(get_store), _: User = Depends(current_user)) -> dict:
+    """What a fresh install still needs: drives the onboarding banner."""
+    s = get_settings()
+    latest = store.latest_run()
+    return {
+        "profile_configured": profile_mod.configured() or store.saved_profile() is not None,
+        "has_data": latest is not None,
+        "youtube_key_set": bool(s.youtube_api_key),
+        "llm_configured": s.llm_configured,
+        "latest_run_at": latest.created_at if latest else None,
+    }
+
+
+# ---- data endpoints ----------------------------------------------------------
 @app.get("/api/v1/brief", tags=["daily"], responses=AUTH)
 def brief(store: Store = Depends(get_store), _: User = Depends(current_user)) -> dict:
     """One-sentence morning brief with changes since the previous run."""
@@ -446,6 +615,23 @@ def sov(
 @app.get("/api/v1/insights", tags=["sov"], responses=NO_DATA)
 def insights(info: RunInfo = Depends(latest_or_404), store: Store = Depends(get_store)) -> dict:
     return {"run": info, "insights": store.insights(info.run_id)}
+
+
+@app.get(
+    "/api/v1/runs/{run_id}/evidence",
+    tags=["runs"],
+    responses={**AUTH, 404: {"model": ErrorBody, "description": "No such run"}},
+)
+def run_evidence(
+    run_id: str = Path(pattern=r"^[0-9]{8}T[0-9]{6}-[a-f0-9]{6}$"),
+    store: Store = Depends(get_store),
+    _: User = Depends(current_user),
+) -> dict:
+    """The run's evidence pack: method, every insight with its numbers, citations and verification."""
+    info = next((r for r in store.runs(200) if r.run_id == run_id), None)
+    if info is None:
+        raise HTTPException(404, "No such run.")
+    return evidence_pack(info, store.insights(run_id), store.risks(run_id, limit=20), get_settings())
 
 
 @app.get("/api/v1/risks", response_model=RiskResponse, tags=["risk"], responses=NO_DATA)
@@ -563,15 +749,49 @@ def export(
     return _csv(rows, cols, f"fanvaaz_{table}_{info.run_id}.csv")
 
 
-@app.post("/api/v1/ask", response_model=AskResponse, tags=["ask"], responses={**NO_DATA, **WRITE})
+@app.post(
+    "/api/v1/ask",
+    response_model=AskResponse,
+    tags=["ask"],
+    responses={**NO_DATA, **WRITE, 429: {"model": ErrorBody, "description": "Rate limited"}},
+)
 def ask(
     body: AskRequest,
     info: RunInfo = Depends(latest_or_404),
     store: Store = Depends(get_store),
-    _: User = Depends(current_user),
+    user: User = Depends(ask_rate_limit),
 ) -> dict:
-    out = answerer_for(info, store).answer(body.question)
-    return {k: out[k] for k in ("answer", "refused", "reasons", "mode", "sources")}
+    """Grounded answer with citations, reasoning steps, memory (pass `thread_id` back) and cache info."""
+    obs.new_trace(info.run_id)
+    thread = body.thread_id or uuid.uuid4().hex[:16]
+    out = answerer_for(info, store).answer(body.question, user_key=user_key(user.id), thread_id=thread)
+    out["thread_id"] = thread
+    return out
+
+
+@app.delete("/api/v1/ask/threads/{thread_id}", status_code=204, tags=["ask"], responses={**AUTH, **WRITE})
+def forget_thread(
+    thread_id: str = Path(pattern=THREAD),
+    store: Store = Depends(get_store),
+    user: User = Depends(current_user),
+) -> Response:
+    """Forget a conversation now (it would otherwise expire after FANVAAZ_MEMORY_TTL_HOURS)."""
+    Memory(store).forget(thread_id, user_key(user.id))
+    return Response(status_code=204)
+
+
+@app.get("/api/v1/me/prefs", tags=["ask"], responses=AUTH)
+def get_prefs(store: Store = Depends(get_store), user: User = Depends(current_user)) -> dict:
+    """Long-term memory: the brands and aspects this user cares about (saved or learned)."""
+    return Memory(store).prefs(user_key(user.id))
+
+
+@app.put("/api/v1/me/prefs", tags=["ask"], responses={**AUTH, **WRITE})
+def put_prefs(body: PrefsIn, store: Store = Depends(get_store), user: User = Depends(current_user)) -> dict:
+    prof = profile_mod.active()
+    brands = [b for b in body.brands if b in prof.brands]
+    aspects = [a for a in body.aspects if a in prof.aspects]
+    return Memory(store).set_prefs(user_key(user.id), brands, aspects)
 
 
 # ---- admin -------------------------------------------------------------------
@@ -596,10 +816,19 @@ def admin_update_user(
     user_id: int = Path(ge=0, le=2_147_483_647),
     accounts: Accounts = Depends(get_accounts),
     admin: User = Depends(require_admin),
+    store: Store = Depends(get_store),
 ) -> dict:
-    return accounts.update_user(
+    out = accounts.update_user(
         user_id, role=body.role, active=body.active, password=body.password, acting=admin
     ).public()
+    audit(
+        store,
+        admin.email,
+        "user.update",
+        str(user_id),
+        {"role": body.role, "active": body.active, "password_reset": body.password is not None},
+    )
+    return out
 
 
 @app.get("/api/v1/admin/runs", response_model=list[RunInfo], tags=["admin"], responses=ADMIN)
@@ -617,32 +846,146 @@ def admin_system(
     runs = store.runs(30)
     return {
         "version": __version__,
+        "database": store.db.label,
         "youtube_key_set": bool(s.youtube_api_key),
-        "llm_configured": bool(s.llm_base_url and s.llm_api_key),
-        "llm_model": s.llm_model if s.llm_base_url else None,
+        "llm_configured": s.llm_configured,
+        "llm_enabled": s.llm_enabled,
+        "llm_model": s.llm_model if s.llm_configured else None,
+        "embed_model": s.embed_model if s.llm_configured else None,
         "daily_run_at": s.daily_run_at or None,
         "timezone": s.timezone,
         "signup_domains": [d.strip() for d in s.signup_domains.split(",") if d.strip()],
         "users": len(accounts.list_users()),
         "quota_units_today_estimate": sum(r.quota_units_used for r in runs[:1]),
         "daily_quota": 10_000,
+        "mcp": {"http": MCP is not None, "read_token_set": bool(s.mcp_token)},
     }
 
 
+@app.get("/api/v1/admin/ai-ops", tags=["admin"], responses=ADMIN)
+def admin_ai_ops(
+    days: int = Query(7, ge=1, le=90), store: Store = Depends(get_store), _: User = Depends(require_admin)
+) -> dict:
+    """LLM ledger: calls, tokens (estimated vs reported), cached tokens, cost, cache and schema-valid rates."""
+    return {
+        **obs.ai_ops(store, days),
+        "governance": Governance(get_settings(), store).summary(),
+        "prompts": prompts.catalog(),
+    }
+
+
+@app.get("/api/v1/admin/audit", tags=["admin"], responses=ADMIN)
+def admin_audit(
+    limit: int = Query(100, ge=1, le=1000),
+    store: Store = Depends(get_store),
+    _: User = Depends(require_admin),
+) -> list[dict]:
+    return audit_log(store, limit)
+
+
+@app.get("/api/v1/admin/traces/{trace_id}", tags=["admin"], responses=ADMIN)
+def admin_trace(
+    trace_id: str = Path(pattern=r"^[a-f0-9]{16}$"), _: User = Depends(require_admin)
+) -> list[dict]:
+    """Every graph node span recorded for one trace (one run or one question)."""
+    return obs.trace_spans(trace_id)
+
+
+@app.get("/api/v1/admin/graphs", tags=["admin"], responses=ADMIN)
+def admin_graphs(_: User = Depends(require_admin)) -> dict:
+    """The two LangGraph agents as Mermaid diagrams."""
+    from .graph import ask_graph, collect_graph
+
+    return {"collect": collect_graph.mermaid(), "ask": ask_graph.mermaid()}
+
+
+# ---- runs: synchronous (scheduler) and background jobs (UI) ---------------------
 @app.post(
     "/api/v1/runs", response_model=RunInfo, status_code=201, tags=["runs"], responses={**ADMIN, **WRITE}
 )
 def create_run(
-    body: RunRequest, store: Store = Depends(get_store), _: User = Depends(require_admin)
+    body: RunRequest, store: Store = Depends(get_store), user: User = Depends(require_admin)
 ) -> RunInfo:
+    """Collect live YouTube data and score it; returns when the run is stored (Cloud Scheduler uses this)."""
     try:
-        info = run_pipeline(source=body.source, keywords=body.keywords, store=store)
+        info = run_pipeline(source=body.source, keywords=body.keywords, store=store, actor=user.email)
     except (RuntimeError, ValueError) as e:
         raise HTTPException(400, str(e)) from e
-    _answerers.clear()
+    clear_answerers()
     return info
 
 
+_JOB_COLS = "job_id, status, started_at, finished_at, run_id, error, progress"
+
+
+def _job(store: Store, job_id: str) -> dict | None:
+    with store._conn() as c:
+        r = c.execute(f"SELECT {_JOB_COLS} FROM run_jobs WHERE job_id = ?", (job_id,)).fetchone()
+    return dict(zip(_JOB_COLS.split(", "), r, strict=True)) if r else None
+
+
+def _run_job(store: Store, job_id: str, keywords: list[str] | None, actor: str) -> None:
+    def progress(node: str) -> None:
+        with store._conn() as c:
+            c.execute("UPDATE run_jobs SET status = 'running', progress = ? WHERE job_id = ?", (node, job_id))
+
+    try:
+        info = run_pipeline(source="youtube", keywords=keywords, store=store, actor=actor, progress=progress)
+        status, run_id, err = "done", info.run_id, None
+        clear_answerers()
+    except Exception as e:  # noqa: BLE001 - the job records the failure for the UI
+        log.exception("run job %s failed", job_id)
+        status, run_id, err = "failed", None, str(e)[:300]
+    with store._conn() as c:
+        c.execute(
+            "UPDATE run_jobs SET status = ?, run_id = ?, error = ?, finished_at = ? WHERE job_id = ?",
+            (status, run_id, err, datetime.now(UTC).isoformat(timespec="seconds"), job_id),
+        )
+
+
+@app.post(
+    "/api/v1/runs/jobs", response_model=JobOut, status_code=202, tags=["runs"], responses={**ADMIN, **WRITE}
+)
+def start_run_job(
+    body: RunRequest, store: Store = Depends(get_store), user: User = Depends(require_admin)
+) -> dict:
+    """Start a live collection in the background; poll GET /api/v1/runs/jobs/{job_id}."""
+    s = get_settings()
+    if not s.youtube_api_key:
+        raise HTTPException(400, "Set FANVAAZ_YOUTUBE_API_KEY to collect live data")
+    profile_mod.sync_from(store)
+    with store._conn() as c:
+        busy = c.execute("SELECT job_id FROM run_jobs WHERE status IN ('queued', 'running')").fetchone()
+    if busy:
+        raise HTTPException(409, f"A collection is already running (job {busy[0]}).")
+    job_id = new_run_id()
+    with store._conn() as c:
+        c.execute(
+            "INSERT INTO run_jobs (job_id, status, started_at, requested_by, progress) VALUES (?,?,?,?,?)",
+            (job_id, "queued", datetime.now(UTC).isoformat(timespec="seconds"), user.email, "queued"),
+        )
+    threading.Thread(target=_run_job, args=(store, job_id, body.keywords, user.email), daemon=True).start()
+    return _job(store, job_id)
+
+
+@app.get(
+    "/api/v1/runs/jobs/{job_id}",
+    response_model=JobOut,
+    tags=["runs"],
+    responses={**ADMIN, 404: {"model": ErrorBody, "description": "No such job"}},
+)
+def get_run_job(
+    job_id: str = Path(pattern=r"^[0-9]{8}T[0-9]{6}-[a-f0-9]{6}$"),
+    store: Store = Depends(get_store),
+    _: User = Depends(require_admin),
+) -> dict:
+    job = _job(store, job_id)
+    if job is None:
+        raise HTTPException(404, "No such job.")
+    return job
+
+
+# ---- tracking profile ----------------------------------------------------------------
 @app.get("/api/v1/profile", response_model=ProfileSummary, tags=["profile"], responses=AUTH)
 def get_profile(_: User = Depends(current_user)) -> ProfileSummary:
     """What is being tracked now. A change takes effect from the next run."""
@@ -652,8 +995,12 @@ def get_profile(_: User = Depends(current_user)) -> ProfileSummary:
 @app.get("/api/v1/admin/profile", response_model=ProfileAdmin, tags=["admin"], responses=ADMIN)
 def admin_profile(store: Store = Depends(get_store), _: User = Depends(require_admin)) -> ProfileAdmin:
     saved = store.saved_profile() or {}
+    try:
+        active = profile_mod.sync_from(store)
+    except profile_mod.NoProfileError:
+        active = None
     return ProfileAdmin(
-        active=profile_mod.active(),
+        active=active,
         updated_by=saved.get("updated_by"),
         updated_at=saved.get("updated_at"),
         presets=[_summary(p) for p in profile_mod.presets().values()],
@@ -664,12 +1011,52 @@ def admin_profile(store: Store = Depends(get_store), _: User = Depends(require_a
 def admin_set_profile(
     body: ProfilePut, store: Store = Depends(get_store), user: User = Depends(require_admin)
 ) -> ProfileAdmin:
-    """Switch to a preset or save a custom profile. Past runs keep the brands they tracked."""
+    """Switch to a template or save a custom profile. Past runs keep the brands they tracked."""
     new = profile_mod.load(body.preset) if body.preset is not None else body.profile
     store.save_profile(new.model_dump(), user.email)
     profile_mod.set_active(new)
-    _answerers.clear()
+    clear_answerers()
+    audit(
+        store,
+        user.email,
+        "profile.set",
+        new.id,
+        {"focus_brand": new.focus_brand, "brands": list(new.brands), "keywords": new.keywords},
+    )
     return admin_profile(store, user)
+
+
+# ---- PWA and Android app support -----------------------------------------------------
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def manifest() -> FileResponse:
+    return FileResponse(STATIC / "manifest.webmanifest", media_type="application/manifest+json")
+
+
+@app.get("/sw.js", include_in_schema=False)
+def service_worker() -> FileResponse:
+    # Served from the root so its scope covers the whole app.
+    return FileResponse(STATIC / "sw.js", media_type="text/javascript", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/.well-known/assetlinks.json", include_in_schema=False)
+def asset_links() -> JSONResponse:
+    """Digital Asset Links for the Android app (FANVAAZ_ANDROID_ASSET_LINK="package:SHA256")."""
+    link = get_settings().android_asset_link
+    if ":" not in link:
+        return JSONResponse([])
+    package, fingerprint = link.split(":", 1)
+    return JSONResponse(
+        [
+            {
+                "relation": ["delegate_permission/common.handle_all_urls"],
+                "target": {
+                    "namespace": "android_app",
+                    "package_name": package,
+                    "sha256_cert_fingerprints": [fingerprint],
+                },
+            }
+        ]
+    )
 
 
 # ---- pages -------------------------------------------------------------------
@@ -705,3 +1092,5 @@ def admin_page(user: User | None = Depends(optional_user)):
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
+if MCP_APP is not None:
+    app.mount("/mcp", MCP_APP, name="mcp")

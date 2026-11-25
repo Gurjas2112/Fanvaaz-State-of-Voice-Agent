@@ -1,5 +1,5 @@
 /* Fanvaaz design system
-   Palette: cool morning paper, indigo ink, breeze teal for Atomberg, slate for rivals,
+   Palette: cool morning paper, indigo ink, breeze teal for the focus brand, slate for rivals,
    kesar and chilli for risk. Type: Bricolage Grotesque (display, numbers), Atkinson
    Hyperlegible (body). One bold element per page: the share-of-voice fan.
    Fonts are self-hosted (SIL Open Font License, see fonts/): no third-party requests. */
@@ -168,7 +168,10 @@ p { margin: 0; }
 table.grid { width: 100%; border-collapse: collapse; font-size: 15px; }
 table.grid th { text-align: left; color: var(--ink-soft); font-weight: 700; padding: 8px 10px; border-bottom: 2px solid var(--ink); }
 table.grid td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-.table-wrap { overflow-x: auto; }
+.table-wrap { overflow-x: auto; max-width: 100%; min-width: 0; position: relative; } /* contains .visually-hidden labels */
+.panel { min-width: 0; }
+/* The hidden attribute must win over component display rules (found by the e2e suite). */
+[hidden] { display: none !important; }
 .facts-list { display: grid; grid-template-columns: max-content 1fr; gap: 8px 24px; margin: 0; }
 .facts-list dt { color: var(--ink-soft); }
 .facts-list dd { margin: 0; font-weight: 700; }
@@ -203,3 +206,30 @@ textarea.input.code { display: block; width: 100%; box-sizing: border-box; margi
   font: 400 14px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; color: var(--ink);
   background: var(--surface); border: 2px solid var(--line); border-radius: var(--r-small); resize: vertical; }
 textarea.input.code:focus { outline: none; border-color: var(--breeze); }
+
+/* Ask: conversation, badges, citations, reasoning trace */
+.suggest { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.thread { list-style: none; padding: 0; margin: 14px 0 0; display: grid; gap: 6px; }
+.thread .turn { justify-self: start; background: var(--paper-deep); border-radius: 14px; padding: 6px 12px; font-size: 15px; }
+.badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.badge { font-size: 13px; font-weight: 700; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; color: var(--ink-soft); background: var(--surface); }
+.sources .cid, .cite { font: 700 13px var(--display); color: var(--breeze); }
+.cite { margin-left: 2px; text-decoration: none; }
+.recs .ok { font-size: 12px; font-weight: 700; color: var(--ok); border: 1px solid var(--ok); border-radius: 999px; padding: 1px 8px; }
+.reasoning { margin-top: 14px; font-size: 15px; color: var(--ink-soft); max-width: 80ch; }
+.reasoning summary { cursor: pointer; font-weight: 700; color: var(--ink); }
+.reasoning ol { margin: 8px 0 0; padding-left: 22px; display: grid; gap: 4px; }
+/* admin: run progress, AI ops */
+.steps.progress, #run-progress { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; padding: 0; margin: 14px 0 0; }
+#run-progress li { font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-soft); }
+#run-progress li.done { background: var(--breeze-soft); color: var(--breeze); border-color: var(--breeze-soft); }
+#run-progress li.now { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.fact .v.small { font-size: 22px; }
+.h3 { font-size: 18px; margin: 22px 0 8px; }
+.plain { padding-left: 18px; color: var(--ink-soft); font-size: 15px; display: grid; gap: 4px; }
+.facts-list dd { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .facts-list { grid-template-columns: 1fr; gap: 2px 0; }
+  .facts-list dd { margin-bottom: 8px; }
+  .inbox-tools select.input { min-width: 0; width: 100%; }
+}

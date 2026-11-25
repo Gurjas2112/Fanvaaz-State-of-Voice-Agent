@@ -2,8 +2,12 @@
 
 Input  : prompt-injection and off-topic detection on user questions; injection
          detection on retrieved comments (they are attacker-controlled text).
-Output : PII redaction and numeric grounding: every number an answer states
-         must exist in the evidence it was given, or the answer is rejected.
+Output : PII and secret redaction (egress DLP) and numeric grounding: every
+         number an answer states must exist in the evidence it was given, or
+         the answer is rejected.
+Risk   : an injection risk score in [0, 1] (pattern hits plus structural
+         signals such as role tags and encoded payloads) is logged for every
+         question, so near-misses are visible before they become attacks.
 
 The red-team suite (tests/safety) measures block rate and false-refusal rate
 against these functions and fails CI below the thresholds in the README.
@@ -25,7 +29,10 @@ INJECTION_PATTERNS = [
     r"\bforget\b.{0,30}\b(everything|instructions|rules|previous)\b",
     r"\b(system|developer|hidden)\s+(prompt|message|instructions?)\b",
     r"\byou\s+are\s+now\b",
-    r"\bact\s+as\b",
+    # "act as" only as an instruction: at the start, addressed to "you", or naming a role to play.
+    # Found on real comments: "made this video to just act as a spokesperson" is not an attack.
+    r"(^|[.!?]\s*)act\s+as\b|\b(you|u)\s+(must\s+|should\s+|will\s+|now\s+)?act\s+as\b",
+    r"\bact\s+as\s+(my|an?\s+(ai|assistant|bot|chatbot|python|linux|terminal|shell|unfiltered|unrestricted|evil|jailbroken|different))\b",
     r"\bpretend\s+(to\s+be|you)\b",
     r"\b(jailbreak|dan\s+mode|developer\s+mode|god\s+mode)\b",
     r"\b(reveal|print|show|repeat|output|leak)\b.{0,30}\b(prompt|instructions|api\s*key|secret|token|password|env)\b",
@@ -109,6 +116,7 @@ REFUSAL = (
 class Verdict:
     allowed: bool
     reasons: list[str] = field(default_factory=list)
+    risk_score: float = 0.0
 
 
 def injection_hits(text: str) -> list[str]:
@@ -117,6 +125,26 @@ def injection_hits(text: str) -> list[str]:
 
 def is_injection(text: str) -> bool:
     return bool(injection_hits(text))
+
+
+_ROLE_TAG = re.compile(r"(^|\n)\s*(system|assistant|developer)\s*:", re.IGNORECASE)
+_ENCODED = re.compile(r"[A-Za-z0-9+/]{40,}={0,2}")
+_ZERO_WIDTH = re.compile("[​-‏⁠﻿]")
+
+
+def injection_score(text: str) -> float:
+    """0 = benign, 1 = certain attack. Pattern hits dominate; structure adds suspicion."""
+    hits = len(injection_hits(text))
+    score = min(hits * 0.6, 1.0)
+    if _ROLE_TAG.search(text):
+        score += 0.3
+    if _ENCODED.search(text):
+        score += 0.2
+    if _ZERO_WIDTH.search(text):
+        score += 0.2
+    if text.count("{") + text.count("<") > 6:
+        score += 0.1
+    return round(min(score, 1.0), 2)
 
 
 # Words in keywords that say nothing about the topic ("best ... in India").
@@ -153,7 +181,7 @@ def check_question(question: str) -> Verdict:
         reasons.append("pii_in_question")
     if q and not is_on_topic(q):
         reasons.append("off_topic")
-    return Verdict(allowed=not reasons, reasons=reasons)
+    return Verdict(allowed=not reasons, reasons=reasons, risk_score=injection_score(q))
 
 
 NUM_RE = re.compile(r"(?<![\w.])(\d+(?:\.\d+)?)\s*(%?)")
@@ -189,6 +217,23 @@ def ungrounded_numbers(
     return bad
 
 
+SECRET_PATTERNS = [
+    re.compile(r"AIza[0-9A-Za-z_\-]{30,}"),  # Google API keys
+    re.compile(r"\bAQ\.[0-9A-Za-z_\-]{20,}"),  # Google AI Studio keys
+    re.compile(r"\bsk-[0-9A-Za-z_\-]{20,}"),  # OpenAI-style keys
+    re.compile(r"\bgsk_[0-9A-Za-z]{20,}"),  # Groq keys
+    re.compile(r"(?i)\bbearer\s+[0-9A-Za-z._\-]{20,}"),
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+]
+SECRET_TOKEN = "[secret]"
+
+
+def redact_secrets(text: str) -> str:
+    for p in SECRET_PATTERNS:
+        text = p.sub(SECRET_TOKEN, text)
+    return text
+
+
 def safe_output(text: str) -> str:
-    """Last line of defence before anything leaves the API."""
-    return redact_pii(text)
+    """Last line of defence before anything leaves the API: PII and secrets (egress DLP)."""
+    return redact_secrets(redact_pii(text))

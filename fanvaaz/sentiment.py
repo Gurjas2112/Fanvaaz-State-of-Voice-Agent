@@ -4,9 +4,9 @@ The rule engine is the always-available baseline and the fallback whenever the
 LLM is off, slow or returns something invalid. It handles the cases that break
 naive lexicon scoring in this domain:
 
-* targets: "Atomberg is great but Havells is noisy" -> Atomberg +, Havells -
-* comparatives: "Atomberg is quieter than Crompton" -> Atomberg +, Crompton -
-* switches: "switched from Usha to Atomberg" -> Usha -, Atomberg +
+* targets: "OnePlus is great but Samsung is laggy" -> OnePlus +, Samsung -
+* comparatives: "OnePlus is faster than Xiaomi" -> OnePlus +, Xiaomi -
+* switches: "switched from Vivo to OnePlus" -> Vivo -, OnePlus +
 * negation, before and after: "not noisy", "accha nahi hai"
 """
 
@@ -36,6 +36,16 @@ POSITIVE_PHRASES = [
     "no sound",
     "zero noise",
     "बहुत अच्छा",
+    # Added from errors on the real-comment dev split (tests/golden/real_dev.jsonl).
+    "no issues",
+    "no issue",
+    "would choose",
+    "i would pick",
+    "the new king",
+    "i like",
+    "i really like",
+    "we like",
+    "i love",
 ]
 NEGATIVE_PHRASES = [
     "not working",
@@ -54,6 +64,13 @@ NEGATIVE_PHRASES = [
     "too expensive",
     "awaaz aati",
     "aawaz aati",
+    # Added from errors on the real-comment dev split.
+    "mat lena",
+    "mat lo",
+    "big no",
+    "should be ashamed",
+    "barely passable",
+    "only con",
 ]
 POSITIVE_WORDS = {
     "good",
@@ -112,6 +129,12 @@ POSITIVE_WORDS = {
     "durable",
     "wonderful",
     "fine",
+    # Added from errors on the real-comment dev split (Hinglish, Tamil slang, verdict words).
+    "winner",
+    "king",
+    "mst",
+    "semma",
+    "super",
     "अच्छा",
     "अच्छी",
     "बढ़िया",
@@ -178,6 +201,9 @@ NEGATIVE_WORDS = {
     "slow",
     "buggy",
     "overrated",
+    "ashamed",
+    "diabolical",
+    "weak",
     "awaaz",
     "aawaz",
     "बेकार",
@@ -216,6 +242,14 @@ CLAUSE_SPLIT = re.compile(r"[.!?;\n]+|\bbut\b|\bhowever\b|\blekin\b|\bmagar\b|\b
 TOKEN_RE = re.compile(r"[a-z']+|[ऀ-ॿ]+")
 SWITCH_RE = re.compile(r"\b(?:switched|moved|shifted|changed|upgraded)\s+from\b", re.I)
 REPLACE_RE = re.compile(r"\breplaced\b", re.I)
+# "people are leaving Samsung and Apple": the brands after the verb lose.
+LEAVE_RE = re.compile(r"\b(?:leaving|left|ditch(?:ed|ing)?|dump(?:ed|ing)?|quit(?:ting)?)\b", re.I)
+# Emoji carry most of the opinion in short comments ("Iphone 17 pro Max ❤"). Ambiguous ones
+# (😂 💀 ☠️ 😢) are deliberately absent: on real comments they mark jokes as often as complaints.
+POSITIVE_EMOJI = ("❤", "😍", "🔥", "👍", "🥰", "💯", "🎉", "😊", "💥", "👌")
+NEGATIVE_EMOJI = ("👎", "😡", "🤮", "😤", "🤬")
+# A yes/no question asks; it does not judge ("Does it have good resale?").
+YESNO_RE = re.compile(r"^\s*(does|do|is|are|can|could|should|will|would|has|have|kya|how's|hows)\b", re.I)
 
 
 @dataclass
@@ -246,6 +280,9 @@ def _polarity(text: str) -> float:
         if any(b in NEGATORS for b in before) or any(a in POST_NEGATORS for a in after):
             val = -val * 0.8
         score += val
+    pos_emoji = sum(text.count(e) for e in POSITIVE_EMOJI)
+    neg_emoji = sum(text.count(e) for e in NEGATIVE_EMOJI)
+    score += 0.6 * min(pos_emoji, 2) - 0.6 * min(neg_emoji, 2)
     return score
 
 
@@ -279,12 +316,18 @@ def _clauses(text: str) -> list[tuple[int, int, str, bool]]:
     return out
 
 
-def _comparative(clause: str, spans: list[Span]) -> dict[str, float] | None:
+def _comparative(clause: str, spans: list[Span], clause_start: int = 0) -> dict[str, float] | None:
     """Handle 'A ... better/worse than B' and 'from B to A' inside one clause."""
     brands = []
     for sp in spans:
         if sp.brand not in brands:
             brands.append(sp.brand)
+    leave = LEAVE_RE.search(clause)
+    if leave:
+        # Span offsets are absolute in the comment; the clause starts at clause_start.
+        left = [sp.brand for sp in spans if sp.start - clause_start >= leave.end()]
+        if left:
+            return {b: (-1.0 if b in left else 0.0) for b in brands}
     if len(brands) < 2:
         return None
     a, b = brands[0], brands[1]
@@ -302,13 +345,15 @@ def _comparative(clause: str, spans: list[Span]) -> dict[str, float] | None:
     return None
 
 
-CHOICE_RE = re.compile(r"\b(or|vs\.?|versus|ya)\b|\bwhich\b|\bkaunsa\b|\bkonsa\b", re.I)
+CHOICE_RE = re.compile(r"\b(or|vs\.?|versus|ya)\b|\bwhich\b|\bkaunsa\b|\bkonsa\b|\bkaun\s+sa\b", re.I)
 
 
 def _is_choice_question(text: str, clause: str, end: int) -> bool:
-    is_question = text[end : end + 1] == "?" or clause.strip().lower().startswith(
-        ("which", "should", "kaunsa", "konsa")
-    )
+    """A question that asks rather than judges: "A or B?", "kaun sa best?", "Does it have good resale?"."""
+    asked = text[end : end + 1] == "?"
+    is_question = asked or clause.strip().lower().startswith(("which", "should", "kaunsa", "konsa"))
+    if asked and YESNO_RE.search(clause):
+        return True
     return is_question and bool(CHOICE_RE.search(clause))
 
 
@@ -333,10 +378,10 @@ def score_text(text: str) -> dict[str, BrandSentiment]:
         if not in_clause:
             continue
         if _is_choice_question(text, clause, end):
-            # "Which is better, Atomberg or Havells?" asks; it does not judge.
+            # "Which is better, OnePlus or Samsung?" asks; it does not judge.
             comp, clause_score = None, 0.0
         else:
-            comp = _comparative(clause, in_clause)
+            comp = _comparative(clause, in_clause, start)
             clause_score = _polarity(clause)
         for sp in in_clause:
             s = comp[sp.brand] if comp and sp.brand in comp else clause_score
@@ -349,7 +394,7 @@ def score_text(text: str) -> dict[str, BrandSentiment]:
                 prev.sentiment = _label(prev.score)
                 prev.aspects = sorted(set(prev.aspects) | set(aspects))
     # With one brand, the comment's overall tone is the brand's tone:
-    # "Bought Atomberg last month. Totally worth it!", "Stealth is silent but overpriced".
+    # "Bought a OnePlus last month. Totally worth it!", "Nord is smooth but overpriced".
     if len(distinct) == 1:
         (brand,) = distinct
         bs = result[brand]

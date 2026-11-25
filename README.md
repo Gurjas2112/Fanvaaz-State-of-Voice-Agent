@@ -1,313 +1,346 @@
-# Fanvaaz
+# Fanvaaz: a YouTube Share-of-Voice agent for any brand
 
-**Hear what your fans are saying.** A daily YouTube Share of Voice desk for any brand, with a reply inbox
-for risky comments, and a test harness that grades the AI behind it.
+[![quality-gates](https://github.com/Gurjas2112/Fanvaaz-State-of-Voice-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Gurjas2112/Fanvaaz-State-of-Voice-Agent/actions/workflows/ci.yml)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
+![LangGraph](https://img.shields.io/badge/agents-LangGraph-1c3c3c)
+![MCP](https://img.shields.io/badge/MCP-server-6b4fbb)
+![Postgres + pgvector](https://img.shields.io/badge/db-Postgres%20%2B%20pgvector-336791)
 
-*Fanvaaz* = *fan* + *awaaz* (Hindi for voice): what your fans are saying about you.
+Every morning Fanvaaz reads the top YouTube results for the searches your buyers use, measures how much of the
+conversation belongs to your brand against its rivals, lines up the comments that need a reply, and answers
+questions with citations to real comments. *Fanvaaz* is **fan** + **awaaz** (Hindi for voice).
 
-You tell Fanvaaz your brand, its rivals and the searches your buyers use (a **tracking profile**). It searches
-YouTube for each keyword, reads the top 50 videos and their top comments, finds every brand mention, scores the
-sentiment aimed at each brand (English and Hinglish), and reports your Share of Voice against the rivals.
-It ships with two ready-made profiles: **Atomberg ceiling fans** (the worked example and the bundled demo data:
-"smart fan" plus five related searches, nine rivals) and **Ather electric scooters**. It then writes evidence-backed recommendations for the
-content and marketing team, and lets them ask follow-up questions in plain language.
+It is built as an **AI-quality showcase**: two LangGraph agents with every AI-engineering control a production team
+asks for (governance, guardrails, evidence, evaluation, observability, caching, cost and token control, memory,
+an MCP server) and a test harness that runs on **real YouTube data, not synthetic demo data**.
 
-Every stage is guarded and gated in CI: golden-set accuracy, metamorphic properties, LLM faithfulness
-(DeepEval, Ragas), red-team refusal (promptfoo), API contract (Postman/Newman, Schemathesis), web E2E
-(Playwright), Android (Appium) and load (k6).
+| | |
+| --- | --- |
+| **Live app** | Cloud Run (asia-south1) + Cloud SQL Postgres; deploy with one command, see [Deploy](#deploy-to-google-cloud). The URL goes here after the first deploy. |
+| **Android app** | Capacitor APK in [`app_screenshots_screen_recording/`](app_screenshots_screen_recording/) once built against the live URL ([how](#android-app-apk)) |
+| **Walkthrough video** | [`app_screenshots_screen_recording/fanvaaz_walkthrough.mp4`](app_screenshots_screen_recording/fanvaaz_walkthrough.mp4) |
+| **Screenshots** | [`app_screenshots_screen_recording/web/`](app_screenshots_screen_recording/web/) (19 flows) and [`mobile/`](app_screenshots_screen_recording/mobile/) (5 flows) |
+| **AI system card** | [`docs/AI_SYSTEM_CARD.md`](docs/AI_SYSTEM_CARD.md) |
+| **Latest run report** | [`docs/RUN_REPORT.md`](docs/RUN_REPORT.md) (generated from a real collection) |
 
-| Landing | Today (signed in) | Admin |
+![Landing page with the live share-of-voice chart](app_screenshots_screen_recording/web/01_landing_live_share_of_voice.png)
+
+---
+
+## Results at a glance (measured on real YouTube data)
+
+The offline tests replay a **recorded real collection**: 99 videos and 3,555 comments for 4 smartphone searches,
+collected with the YouTube Data API, PII-redacted and replayed through the full agent. A live test calls the real API.
+
+| What | Result | How it is measured |
 | --- | --- | --- |
-| ![Landing](docs/screenshots/landing.png) | ![App](docs/screenshots/app.png) | ![Admin](docs/screenshots/admin.png) |
+| Tests | **233 passed** on SQLite, the same suite on **Postgres 16 + pgvector**, 1 live test against the YouTube API | `make test`, `make pg-test`, `pytest -m live` |
+| Brand-targeted sentiment, rules only, **real comments** | **macro-F1 0.73** (untouched holdout) | [`tests/golden/real_holdout.jsonl`](tests/golden/real_holdout.jsonl), hand-labelled |
+| Same, hand-written sentences | macro-F1 0.86 (holdout) | the gap is the point: synthetic sets flatter rules |
+| Retrieval ranking, 8 real questions | **MRR 0.84 vs 0.44**, recall@5 **0.73 vs 0.25** (re-ranked vs plain BM25) | [`tests/golden/test_retrieval.py`](tests/golden/test_retrieval.py) |
+| Prompt-injection red team | **40/40 blocked, 0/30 benign refused** | [`tests/safety`](tests/safety) |
+| Real comments wrongly quarantined as injections | **0 / 3,555** (after fixing a false positive the real data exposed) | `reports/real_quarantine.json` |
+| Insights with grounded numbers and resolvable citations | **100%** of every run | `verify` node + evidence pack |
+| Web E2E (Playwright) | 21/21, incl. phone layout, PWA, follow-up memory | `make e2e` |
 
-> Screenshots use the bundled **synthetic** dataset so everything runs with no keys; the app shows a banner saying
-> so. Run a live collection (below) for real findings.
+**Real data changed the engineering.** Switching from a synthetic demo dataset to real comments found five defects
+that every synthetic test had missed. The sentiment rules scored 0.84 on hand-written sentences and **0.46** on real
+comments. Emoji-only praise, Tamil and Hinglish slang, and "should be ashamed" all read as neutral, so the rules were
+tuned on a real *dev* split and re-measured on an untouched real *holdout*, reaching 0.73.
+The other four defects:
+- The injection filter quarantined "made this video to *act as* a spokesperson".
+- A safety alert's "reply within 24 hours" failed its own grounding check.
+- Keywords containing numbers ("under 30000") broke the same check.
+- Praise questions retrieved "Samsung in reels" memes.
+
+Each fix has a regression test.
+
+---
+
+## The AI-engineering checklist, and where each item lives
+
+| Concept | What Fanvaaz does | Code |
+| --- | --- | --- |
+| **AI governance** | YAML policy: model and task allow-lists, budgets, retention, what a model may never do; kill switch; append-only audit log of profile changes and runs; AI system card | [`governance.py`](fanvaaz/governance.py), [`policy.yaml`](fanvaaz/data/policy.yaml), [`AI_SYSTEM_CARD.md`](docs/AI_SYSTEM_CARD.md) |
+| **AI reasoning** | The Ask agent plans before it retrieves: it resolves follow-ups from memory, splits comparisons into one sub-query per brand, detects praise or complaint intent, and falls back to an LLM planner limited to known brands. Every decision is returned as `reasoning_steps`, never hidden chain-of-thought | [`graph/ask_graph.py`](fanvaaz/graph/ask_graph.py) |
+| **AI harness** | LangGraph checkpointing (SQLite or Postgres): a failed collection **resumes from its last node** (`fanvaaz resume`). Node retry policies, a circuit breaker on 401/402/403, and a harness of 9 test tools | [`graph/`](fanvaaz/graph), [`pipeline.py`](fanvaaz/pipeline.py) |
+| **AI security** | Injection patterns plus a risk score; retrieved comments quarantined; PII and secret redaction on every output (egress DLP); per-user rate limit; MCP read/admin scopes; CSRF, scrypt, hashed sessions, CSP | [`guardrails.py`](fanvaaz/guardrails.py), [`auth.py`](fanvaaz/auth.py), [`mcp_server.py`](fanvaaz/mcp_server.py) |
+| **Evidence generation** | Every insight carries its numbers *and* citations (YouTube video and comment links). The `verify` node rejects ungrounded numbers and dangling citations; an evidence pack per run is downloadable | [`evidence.py`](fanvaaz/evidence.py), `GET /api/v1/runs/{id}/evidence` |
+| **Evaluation and ranking** | Golden sets (hand-written and real), metamorphic tests, retrieval recall@k/MRR, red team, DeepEval (faithfulness, relevancy, hallucination, G-Eval) and Ragas with Gemini as judge. Ranking is BM25 + pgvector, fused with RRF, then re-ranked on brand, aspect, sentiment intent, substance, likes and video rank, with an optional Vertex AI ranker | [`retrieval.py`](fanvaaz/retrieval.py), [`tests/`](tests) |
+| **Observability and monitoring** | JSON logs for Cloud Logging; a span for every graph node; an LLM ledger; an **AI Ops** admin panel; Prometheus `/metrics`; `/ready`; log-based alert on failed runs | [`obs.py`](fanvaaz/obs.py), [`static/admin.js`](fanvaaz/static/admin.js) |
+| **Prompt caching** | Three layers: provider prefix caching (static system text first; cached tokens recorded), an exact response cache, and a **verified semantic answer cache** (same run, same scope and intent, similar question, cited comments still present) | [`cache.py`](fanvaaz/cache.py) |
+| **Prompt engineering** | Versioned YAML prompts with few-shot examples and a content hash; the version is logged on every call; promptfoo compares behaviour | [`prompts/`](fanvaaz/prompts), [`promptfoo/`](promptfoo) |
+| **Schema evaluation** | Pydantic output contracts sent as `json_schema`, one repair retry with the validation error, and a schema-valid rate in AI Ops. Request bodies are strict (no coercion, no unknown fields) | [`schemas.py`](fanvaaz/schemas.py), [`ai.py`](fanvaaz/ai.py) |
+| **MCP server** | 11 tools (SoV, insights, risks, hybrid search, grounded Ask, evidence, AI Ops, YouTube lookups, collection), 2 resources and a prompt, over stdio and HTTP at `/mcp` with Bearer scopes | [`mcp_server.py`](fanvaaz/mcp_server.py) |
+| **AI memory** | Short-term: per-thread follow-ups ("and battery?") summarised after N turns. Long-term: saved or learned focus brands and aspects. Keyed by a hash, PII-redacted, both expiring | [`memory.py`](fanvaaz/memory.py) |
+| **Context engineering** | A token-budgeted context: stats first, memory summary, then deduplicated, truncated, cited comments; reports how much of the budget was used and what was dropped | [`context.py`](fanvaaz/context.py) |
+| **Cost optimisation** | The LLM re-checks only low-confidence rule labels; batching; caches; per-run and per-day USD caps; a cost ledger; YouTube quota accounting; Cloud Run scales to zero; budget alert | [`extract.py`](fanvaaz/extract.py), [`governance.py`](fanvaaz/governance.py) |
+| **Token count** | A local pre-call estimate (Latin and Devanagari aware) gates every call; provider `usage` is recorded next to it with the estimate error; `fanvaaz tokens` compares with Gemini `countTokens` | [`tokens.py`](fanvaaz/tokens.py) |
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph GCP["Google Cloud (asia-south1)"]
+    SCH[Cloud Scheduler 06:25 IST] -->|POST /api/v1/runs| RUN
+    RUN["Cloud Run: FastAPI<br/>web app, REST, /mcp, /metrics"] --> SQL[("Cloud SQL Postgres 16<br/>+ pgvector<br/>runs, RAG chunks, checkpoints,<br/>LLM ledger, audit, memory")]
+    RUN --> SM[Secret Manager]
+    RUN --> LOG[Cloud Logging and alerts]
+  end
+  YT[YouTube Data API v3] --> RUN
+  RUN <--> GEM["Gemini Flash + gemini-embedding-001<br/>(OpenAI-compatible API, via the gateway)"]
+  USERS[Browser / Android app] --> RUN
+  MCPC[Claude Desktop / Claude Code] -->|MCP over HTTP or stdio| RUN
+```
+
+### Agent 1: daily collection (LangGraph, checkpointed)
+
+```mermaid
+flowchart LR
+  collect --> extract
+  extract -->|LLM allowed| relabel --> score
+  extract -->|rules only| score
+  score --> risk --> insights
+  insights -->|LLM allowed| rewrite --> evidence
+  insights -->|rules only| evidence
+  evidence --> persist --> index
+```
+
+| Node | Does |
+| --- | --- |
+| `collect` | YouTube `search` → `videos` → `commentThreads` (retry policy; quota counted), or replays a recorded collection |
+| `extract` | deterministic brand matching (aliases, Devanagari) + brand-targeted sentiment (comparatives, switches, negation, Hinglish, emoji) |
+| `relabel` | Gemini re-checks only uncertain labels (schema-validated; cannot add brands) |
+| `score` | Share of Voice per keyword |
+| `risk` | escalation radar: safety, legal, product and service failures; framing-aware |
+| `insights` → `rewrite` | rule-built recommendations, then an optional LLM polish that is rejected if it invents a number |
+| `evidence` | citations + grounding verification |
+| `persist` → `index` | append-only run; RAG chunks with embeddings (pgvector) |
+
+### Agent 2: Ask (LangGraph)
+
+```mermaid
+flowchart LR
+  guard -->|refused| respond
+  guard --> recall --> plan --> stats --> cache
+  cache -->|verified hit| respond
+  cache --> retrieve --> context --> answer --> verify --> remember --> respond
+```
+
+### The Share of Voice metric
+
+Each result at rank r is discounted by **w(r) = 1 / log2(r + 1)** (rank 1 = 1.00, rank 10 = 0.29, rank 50 = 0.18).
+
+| Part | Definition |
+| --- | --- |
+| **M**, mention share | rank-weighted mentions (title 2, description 1, each comment 1) |
+| **E**, engagement share | rank-weighted `ln(1+views) + 2 ln(1+likes) + 3 ln(1+comments)`, split among the brands a video mentions |
+| **P**, share of positive voice | rank-weighted positive mentions |
+| **SoV** | **0.3 M + 0.4 E + 0.3 P** (configurable; all parts reported) |
+
+**Why N = 50:** one `search.list` page returns 50 results and the rank weight already makes result 50 count 18% of
+result 1. Cost ≈ 151 quota units per keyword, so a 6-keyword profile uses about 906 of the 10,000 free daily units.
+
+### Risk radar
+
+Weighted, negation-aware and brand-attributed escalation flags (safety 50, legal or consumer 30, product failure 20,
+service failure 15, plus 10 if the mention is negative, scaled by comment likes). The approach comes from the author's
+[CRIF India hackathon project](https://github.com/Gurjas2112/CRIF-Hackathon-2023) (1st prize, COEP Mindspark 2023).
+Real comments added **framing awareness**: "the thumbnail makes it look like it's on fire" is about the video, not
+the product.
 
 ---
 
 ## Quick start
 
 ```bash
-git clone https://github.com/Gurjas2112/Fanvaaz-SoV-Agent.git && cd Fanvaaz-SoV-Agent
 pip install -e ".[dev]"
-export FANVAAZ_ADMIN_EMAIL=you@example.com FANVAAZ_ADMIN_PASSWORD='choose-a-long-passphrase'
-fanvaaz run --source demo           # seed from the bundled synthetic dataset (no keys, no network)
-fanvaaz serve                       # http://127.0.0.1:8000 -> sign in at /login (API docs at /docs)
-pytest -m "not mobile and not llm" # every offline gate + Playwright
+cp .env.example .env            # add FANVAAZ_YOUTUBE_API_KEY (and optionally a Gemini key)
+make replay                     # score the recorded real collection: no key, no network
+make serve                      # http://127.0.0.1:8000, sign in with FANVAAZ_ADMIN_EMAIL / _PASSWORD
+make live                       # collect live YouTube data now (~600 quota units for 4 keywords)
 ```
 
-Live data (needs a free YouTube Data API v3 key):
+Production-like stack on Postgres + pgvector: `docker compose up --build`.
 
-```bash
-cp .env.example .env               # set FANVAAZ_YOUTUBE_API_KEY (and optionally an LLM)
-fanvaaz run --source youtube     # ~906 of the 10,000 free daily quota units
-python scripts/two_pager.py        # writes docs/TWO_PAGER.md for the submission
-```
+### Track your own brand in 5 minutes
 
-Docker: `docker compose up --build` (seeds a demo run on first boot, serves on :8000).
-
-## Track any brand
-
-What Fanvaaz tracks is data, not code. A tracking profile names:
-
-| Field | Example (Ather) | Used for |
-| --- | --- | --- |
-| `focus_brand`, `brands` | `Ather` vs Ola Electric, TVS iQube, Bajaj Chetak, Hero Vida, each with the spellings people use (`"ola s1"`, `"iqube"`) | brand matching, ranking, whose inbox comes first |
-| `keywords` | `best electric scooter India`, `electric scooter range test` (up to 10, about 151 API units each) | YouTube searches |
-| `category` | `electric scooters` | LLM prompts, the Ask box |
-| `aspects`, `playbook` | `range`, `charging`, `service` → "publish real-world range tests" | *why* people praise or complain, and what to do |
-| `risk_terms` | `battery fire`, `brake failure` | extra risk phrases on top of the generic ones (fire, shock, consumer court, refund, not working) |
-
-Switch or define one in three ways:
-
-```bash
-fanvaaz profile list                      # presets; * marks the one in use
-fanvaaz profile use ather-scooters        # or: fanvaaz profile use my-brand.json
-fanvaaz profile show > my-brand.json      # start your own from the current one
-```
-
-or in **Admin → What Fanvaaz tracks** (pick a preset, or edit the profile and save), or with
-`FANVAAZ_PROFILE=<id or path>` as the default for a new install. Every profile is validated before it is saved: the
-focus brand must be one of the brands, an alias can belong to only one brand, there are 2 to 20 brands and 1 to 10
-keywords, and errors say which field is wrong.
-
-Each run stores the profile it used, so switching never rewrites history: past runs keep their brands, and
-"since the last run" only compares runs that tracked the same focus brand. Only the Atomberg profile has bundled
-demo data; any other profile collects live from YouTube.
-
----
-
-## The product
-
-| Page | Who | What it is for |
-| --- | --- | --- |
-| `/` | anyone | What Fanvaaz does, with an example share-of-voice fan; sign in or create an account |
-| `/signup`, `/login` | anyone | Accounts; sign-up can be limited to company domains (`FANVAAZ_SIGNUP_DOMAINS=yourbrand.com`) |
-| `/app` | analysts, admins | **Today**: one-sentence brief with change since the last run · **Voice**: the fan chart and ranking per search term · **Reply inbox**: risk comments to mark handled or dismissed (status carries over to later runs) · **This week**: recommendations · **Ask**: guarded Q&A · CSV downloads |
-| `/admin` | admins | What Fanvaaz tracks (preset or custom profile), collect from YouTube or load demo data, run history and API units, people (role, access, password reset), setup status |
-
-No other pages: password reset is done by an admin (no email service needed), and settings live in environment
-variables shown on the admin page.
-
-**Designed for daily use.** The first screen is one sentence ("Atomberg holds 28.7% of the conversation, #1 of 10,
-up 1.2 pts since the last run. 24 safety comments are waiting for a reply."), then the inbox. With
-`FANVAAZ_DAILY_RUN_AT=06:30` a fresh collection lands every morning; a date-keyed claim row stops two workers
-collecting twice.
-
-**Visual identity.** The share of voice is drawn as a ceiling fan: one swept blade per brand, its length growing
-with the square root of the share (so blade *area* stays honest), your brand in breeze teal `#0F8B8D`. It spins once
-on load and stays still under `prefers-reduced-motion`. Type is Bricolage Grotesque for headlines and Atkinson
-Hyperlegible for reading, both self-hosted (SIL OFL), so the pages make no third-party requests.
-
-### Accounts and security
-
-| Control | Implementation |
-| --- | --- |
-| Passwords | scrypt (n=2^14, r=8, p=1), per-user salt, constant-time compare; min 10 characters, common-password list |
-| Sessions | 32-byte random token in an `HttpOnly`, `SameSite=Lax` cookie (`Secure` behind HTTPS); only its SHA-256 is stored; revoked on logout, deactivation or password reset |
-| CSRF | cookie-authenticated writes need `X-Requested-With: fanvaaz`; no CORS is allowed |
-| Brute force | 5 failed sign-ins per email per 15 minutes → 429; same message and work for unknown emails |
-| Roles | `analyst` (read, triage, ask) and `admin` (people, runs); the last active admin cannot be removed, and admins cannot demote themselves |
-| Automation | `Authorization: Bearer $FANVAAZ_API_TOKEN` for CI tools (Newman, promptfoo, Schemathesis, k6) |
-| Requests | strict bodies: no type coercion (`"active": 0` is rejected) and no unknown fields |
-| Pages | CSP `default-src 'self'` (no inline script), `X-Frame-Options: DENY`, `nosniff`, open-redirect-safe `?next=` |
-
-### MCP servers: none added, on purpose
-
-The problem statement needs an agent and a two-pager; the role needs test automation and LLM evaluation. Fanvaaz
-already calls the official YouTube Data API directly, so a community YouTube MCP server would wrap the same API and
-add a dependency without adding capability. Exposing Fanvaaz itself as an MCP server would be optional, so it is
-left out.
-
-## How it works
-
-```
-YouTube Data API ─▶ Collector ─▶ Extractor ─────▶ SoV engine ─▶ FastAPI ─▶ Dashboard (web + mobile)
-   search/videos/     ranks,       brands (rules)    M, E, P,       /sov        Ask the data
-   commentThreads     stats,       sentiment         SoV            /insights
-                      PII redacted (rules | LLM)          │         /ask ◀── guardrails + grounding
-                                        │                 ▼
-                                        └────────▶ Insights (rules, optional LLM rewrite, grounded)
-```
-
-| Stage | What it does | Where |
-| --- | --- | --- |
-| Collect | `search.list` (N=50, region IN) → `videos.list` → `commentThreads.list` (100 top comments). Retries, quota accounting, comments-disabled handling; raw JSON saved per run for replay | `collector.py` |
-| Redact | Emails and Indian phone numbers replaced at ingestion, before anything is stored or sent to an LLM; commenter ids stored as hashes | `text.py` |
-| Brands | Deterministic alias matcher with word boundaries ("Renesa", "atom berg", "एटमबर्ग" → Atomberg; "orientation" ≠ Orient; "super fan" ≠ Superfan). **The LLM can never add or remove a brand mention.** | `brands.py` |
-| Sentiment | Brand-targeted: "Atomberg is quieter than Crompton" → +/−; "switched from Usha to Atomberg"; negation before and after ("accha nahi"); contrast ("silent but overpriced"); choice questions are neutral; injection comments are never counted as praise. Optional LLM relabel, validated | `sentiment.py`, `extract.py` |
-| Score | Share of Voice (below) per keyword and overall | `sov.py` |
-| Explain | 8 insight/recommendation types, each carrying its evidence numbers. An LLM may reword them; a rewrite that states a number not in the evidence is rejected | `insights.py` |
-| Risk radar | Flags comments that need escalating (safety, legal/consumer, product failure, service failure), scored by category weight and likes, attributed to the right brand, with the evidence clause | `risk.py` |
-| Ask | BM25 retrieval over comments; injection-like comments quarantined; question guardrails (injection, PII, off-topic); answer grounding and PII redaction | `ask.py`, `guardrails.py` |
-| Export | Flat CSVs (SoV, risks, mentions) for Tableau, Power BI or Excel, with spreadsheet formula injection neutralised | `GET /api/v1/export/{table}.csv` |
-
-### Risk radar (adapted from our CRIF hackathon project)
-
-Share of Voice says how loud a brand is. A brand team also needs to know which comments need a response today: a
-sparking fan, a consumer-court threat, a dead motor. The radar adapts the reputation-risk scoring from our
-team's [CRIF India hackathon project](https://github.com/Gurjas2112/CRIF-Hackathon-2023) (COEP Mindspark 2023,
-1st prize), which scored news articles with weighted word lists and fed tagged CSVs to Tableau.
-
-| Category | Weight | Example terms |
-| --- | --- | --- |
-| safety | 50 (always high severity) | sparking, burning smell, shock, caught fire, jal gaya |
-| legal_consumer | 30 | consumer court, legal notice, fraud, refund |
-| product_failure | 20 | stopped working, motor burnt, defective, kharab |
-| service_failure | 15 | no response, technician never came, ticket closed |
-
-Score = sum of the comment's category weights (each once) + 10 if the brand mention is negative, then multiplied by
-`1 + log10(1 + likes) / 2`, because a liked complaint reaches more buyers. High at 60 or any safety flag, medium at 30.
-
-| CRIF approach | Problem for this use | Fanvaaz |
-| --- | --- | --- |
-| Any token in a 4,472-word negative list adds +10 | "no noise" and "not bad" counted as negative | negation-aware terms; sentiment from the brand-targeted engine |
-| Whole article scored | every brand in it shares the blame | risk goes to the nearest brand in the clause ("Havells caught fire, switched to Atomberg" flags Havells) |
-| Generic categories (lawsuit, harassment, country) | not what a fan company escalates | fan-specific safety, consumer, product and service categories, Hinglish included |
-| Offensive-word list with slurs | not needed, and risky to ship | dropped |
-| Errors swallowed by bare `except` | silent data loss | typed failures, tested |
-| Transformer model reloaded per headline | slow | rules first; optional LLM only with validation |
-
-**Known limit**, kept visible as a strict `xfail` test: slang like "this fan is fire" (= great) still reads as a
-fire risk.
-
-### The Share of Voice metric
-
-Each result at rank r gets the search-ranking discount **w(r) = 1 / log2(r + 1)** (rank 1 = 1.00, rank 10 = 0.29,
-rank 50 = 0.18), because viewers see the top results far more than the 50th. For each brand:
-
-| Part | Definition |
-| --- | --- |
-| **M**, mention share | rank-weighted mentions; title counts 2, description 1, each comment 1 |
-| **E**, engagement share | rank-weighted engagement `ln(1+views) + 2 ln(1+likes) + 3 ln(1+comments)`, split among the brands a video mentions. Logs stop one viral video from dominating |
-| **P**, Share of Positive Voice | rank-weighted positive mentions |
-| **SoV** | **0.3 M + 0.4 E + 0.3 P** (weights in settings, `FANVAAZ_W_*`; all parts are reported separately) |
-
-**Why N = 50:** one `search.list` page returns 50 results; very few viewers go past it, and the rank weight already
-makes result 50 count 18% as much as result 1. Cost: 100 (search) + 1 (stats) + 50 (comments) ≈ 151 units per
-keyword, ≈ 906 for six keywords against a 10,000-unit free daily quota, so the whole study can be re-run 10 times a day.
+1. Sign in as the admin. A fresh install tracks nothing, and the admin page shows an onboarding step.
+2. Pick an example template (`smartphones-india`, `ev-scooters-india`) or paste your own profile: your brand, up to
+   19 rivals with the spellings people use (including Hindi script), up to 10 YouTube searches, aspects and
+   playbook actions, extra risk phrases.
+3. Click **Collect live from YouTube now** and watch the LangGraph nodes tick through.
+4. Past runs keep the brands they tracked; the profile change is in the audit log.
 
 ---
 
 ## Quality harness
 
-| Gate | Tool | Threshold | Measured (this repo, demo data) |
+| Gate | Tool | Threshold | Measured |
 | --- | --- | --- | --- |
-| Unit, collector (mocked YouTube), risk rules, auth, tracking profiles | pytest, httpx MockTransport | all pass | pass (**188 tests** incl. E2E; 1 documented xfail) |
-| Metamorphic properties | Hypothesis | 0 violations | comment order, brand-less comments, alias spelling, antisymmetric comparatives: all hold |
-| Brand detection | golden **holdout**, 50 comments / 59 brand pairs | F1 ≥ 0.95 | **F1 1.00** |
-| Brand-targeted sentiment, rules only | golden **holdout** | macro-F1 ≥ 0.80 | **macro-F1 0.84** (dev set: 0.99) |
-| Red-team refusal | own corpus, 40 attacks / 30 benign | ≥ 95% blocked, ≤ 5% false refusals | **40/40 blocked, 0/30 false refusals** |
-| LLM guard paths | fake LLMs that lie, leak PII, invent brands | must be rejected | all rejected |
-| promptfoo | behaviour + refusal on live `/ask` | all pass | **11/11** |
-| API contract | Postman + Newman | all pass | **65/65 assertions, 28 requests** incl. sign-up, cookie session, CSRF, roles, tracking profile |
-| API fuzzing | Schemathesis (OpenAPI, stateful) | 0 failures | **5,724 cases over 5 seeds, 0 failures** after fixing 9 findings (below) |
-| Web E2E | Playwright | all pass | **19/19**: landing, sign-up/sign-in errors, open redirect, brief, inbox triage, admin, switching the tracked brand, roles, XSS, phone layout |
-| CSV export safety | pytest | formulas neutralised | `=`, `+`, `-`, `@` cells prefixed with `'` |
-| Load | k6, 55 req/s for 60 s, authenticated | p95 < 500 ms, < 1% errors | **3,301 requests, 0 errors, p95 7.1 ms (reads), 9.5 ms (ask)**, 1 worker |
-| Faithfulness / hallucination | DeepEval, Ragas | faithfulness ≥ 0.8 | needs an LLM key: `make llm-evals` |
-| Android | Appium (UiAutomator2, Chrome) | all pass | runs in CI on an emulator: `mobile-appium` job |
+| Unit, graph, platform (gateway, cache, budgets, circuit breaker, memory, migrations, resume) | pytest, httpx MockTransport | all pass | **233 passed** (SQLite) and the same suite on Postgres + pgvector |
+| Metamorphic properties | Hypothesis | 0 violations | order, brand-less text, alias spelling, antisymmetric comparatives |
+| Sentiment, **real comments** | golden `real_holdout` (never tuned on) | macro-F1 ≥ 0.70 | **0.73** (real dev: 0.88) |
+| Sentiment, hand-written | golden `holdout` | macro-F1 ≥ 0.80 | **0.86** (dev: 0.99) |
+| Brand detection | golden `holdout` | F1 ≥ 0.95 | **1.00** |
+| Retrieval ranking | 8 real questions, pooled judgments | hybrid ≥ BM25, recall@5 ≥ 0.6 | **recall@5 0.73, P@5 0.68, MRR 0.84** (BM25: 0.25 / 0.23 / 0.44) |
+| Red-team refusal | own corpus, 40 attacks / 30 benign | ≥ 95% blocked, ≤ 5% false refusals | **40/40, 0/30** |
+| Injection false positives on real data | 3,555 real comments | ≤ 0.2% | **0** |
+| LLM guard paths | fake LLMs that lie, leak PII, invent brands, return invalid JSON, hit 402 | rejected, repaired or circuit-broken | all pass |
+| Live data | real YouTube API through the graph | PII-free, quota ≤ 120 units | pass (`pytest -m live`) |
+| Web E2E | Playwright | all pass | **21/21** |
+| API contract | Postman + Newman | all pass | in CI (`live-api` job) |
+| API fuzzing | Schemathesis | 0 failures | in CI |
+| Behaviour and refusal | promptfoo on live `/ask` | all pass | in CI |
+| Load | k6 | p95 < 500 ms | in CI |
+| Faithfulness and hallucination | DeepEval, Ragas (Gemini judge) | faithfulness ≥ 0.8 | `make llm-evals` (needs a funded Gemini key; not yet run, see below) |
+| Android | Appium (UiAutomator2) | all pass | CI emulator job |
 
-**Why two golden sets.** `dev.jsonl` was used while writing the rules, so its 0.99 overstates accuracy.
-`holdout.jsonl` was written before tuning and scored once; 0.84 is the honest number. Its 9 errors (in
-`reports/golden_holdout.json` after a test run) show the rule engine's limits, e.g. "Atomberg is good, Havells is
-bad" split only by a comma, and praise without lexicon words ("sleep mode is lovely"). That gap is the case for
-the LLM relabel path, which is validated by the DeepEval/Ragas suite. Both sets are small and hand-labelled by
-one person; add real labelled comments from a live run before trusting decimals.
+**Why four golden sets.** Hand-written sentences are clean; real comments are emoji, Hinglish, Tamil and typos. Rules
+were tuned only on the *dev* splits; the *holdout* splits are the honest numbers. The real sets were sampled with the
+brand matcher, so they measure sentiment only; brand recall is measured on the hand-written sets. Each set has about 60
+brand pairs and one labeller, so read the decimals with care.
 
-**What the harness caught while building it**
-
-- **Schemathesis, after adding tracking profiles, found 2 more defects and one process bug**: a 405 on
-  `/api/v1/admin/profile` sent `Allow: GET` although PUT works (Starlette reads only the first route on a path;
-  `Allow` is now built from every route); a 5,000-character `demo_data` name crashed the file check with a 500 (names
-  are now matched against a listing of bundled files, never turned into a path); and the fuzzer, acting as an
-  admin, switched the tracked brand mid-CI, so the promptfoo checks after it failed. Fuzzing now runs last.
-
-- **Schemathesis, after adding accounts, found 7 real defects**: a user id of 2^63 crashed the server (SQLite
-  overflow, 500); `"active": 0` was silently coerced to `false` and deactivated an admin; password reset re-validated
-  the stored email, so older accounts could never be reset; Python's and JSON Schema's `\s` disagree on `\x1f` and
-  `\x85`, so client and server disagreed on valid emails (twice); my own 422s used a string where FastAPI's 422
-  schema promises a list; and sign-up could return an undocumented 429 through the login throttle. Each now has a
-  regression test.
-- **Playwright** caught stacked toasts after two quick actions, and the header overflowing a 390 px phone.
-- **Screenshots** caught two CSS padding clashes (`.wrap` vs `.bar`/`.foot`) that pinned content to the phone's edge.
-- **Schemathesis** found that `/sov` returned 404 and `/ask` returned 400 on malformed JSON, neither documented in
-  the OpenAPI spec. Both are now declared.
-- **Playwright** found the dashboard was 588 px wide on a 390 px phone (a grid item would not shrink). Fixed.
-- **A unit test** found "Which is better, Atomberg or Havells?" scored both brands positive. Choice questions are now neutral.
-- **The golden holdout** exposed over-fitting: dev 0.99 vs holdout 0.84.
-- **ruff** caught a regex f-string in the risk module that only parses on Python 3.12+, though the project supports 3.11.
-
-Reports land in `reports/` (golden, safety, promptfoo, k6, DeepEval, Ragas) and are uploaded as CI artifacts.
+**What the harness caught**
+- **Real data**: the five defects above (sentiment gap, an injection false positive, a self-inflicted grounding
+  failure, numbers in keywords, meme retrieval).
+- **The live Gemini run**: the key's prepaid credits were depleted (HTTP 402 on every call). The agent completed on
+  rules as designed, but tried all 45 batches, so a **circuit breaker** now stops after the first 401/402/403.
+- **Playwright**:
+  - The "Show more" button ignored its `hidden` attribute.
+  - The admin page was 476 px wide on a 390 px phone: a visually hidden table label escaped its scroll container.
+  - Earlier, stacked toasts and a header overflow.
+- **Schemathesis**: 9 defects in earlier rounds. Among them:
+  - A user id of 2^63 caused a 500.
+  - `"active": 0` was coerced to `false`.
+  - Python's and JSON Schema's `\s` disagree on valid emails.
+  - The 405 `Allow` header was incomplete.
 
 ---
 
-## CI (GitHub Actions)
+## MCP server
 
-`.github/workflows/ci.yml` runs on every push and PR:
+Use Fanvaaz from Claude Desktop or Claude Code: **stdio** locally, or **HTTP** against the deployed service.
 
-| Job | Runs |
-| --- | --- |
-| offline-gates | ruff, unit, metamorphic, golden, API, safety |
-| live-api | starts the API, then Newman, promptfoo, k6, and Schemathesis last (it changes state) |
-| e2e-web | Playwright with traces on failure |
-| mobile-appium | Android 13 emulator, Appium 2, UiAutomator2 |
-| llm-evals | DeepEval + Ragas, only when `RUN_LLM_EVALS=true` and LLM secrets are set |
-| docker | builds the image and checks `/health` |
+```jsonc
+// Claude Desktop: claude_desktop_config.json
+{ "mcpServers": { "fanvaaz": { "command": "fanvaaz", "args": ["mcp"] } } }
+```
+```bash
+# Claude Code against Cloud Run (read-only token from Secret Manager: fanvaaz-mcp-token)
+claude mcp add --transport http fanvaaz https://<service-url>/mcp/ --header "Authorization: Bearer <token>"
+```
+
+Tools: `get_share_of_voice`, `list_keywords`, `get_insights`, `get_risks`, `search_comments`, `ask_fanvaaz`,
+`get_evidence`, `get_ai_ops`, `youtube_video_info`, `youtube_video_comments` (1 quota unit each),
+`youtube_search` and `run_collection` (admin scope). Resources: `fanvaaz://profile`, `fanvaaz://policy`. Prompt: `weekly_brief`.
+
+The YouTube tools take their ideas from [temiedani/youtube-mcp-server](https://github.com/temiedani/youtube-mcp-server)
+but none of its code. That project:
+- authenticates with OAuth only (its documented API-key variable is never read);
+- writes `print()` output to stdout, which corrupts the stdio JSON-RPC stream;
+- relies on `relatedToVideoId`, which YouTube removed;
+- has no quota handling or license file.
+
+Fanvaaz rebuilds the same tools on its own collector, with API-key auth, quota accounting, PII redaction and stderr logging.
+
+---
+
+## Deploy to Google Cloud
+
+```bash
+gcloud auth login
+gcloud config set project <your-project-id>
+ADMIN_EMAIL=you@example.com bash deploy/gcp_cloud_run.sh     # or: make deploy
+```
+
+[`deploy/gcp_cloud_run.sh`](deploy/gcp_cloud_run.sh) is idempotent. It:
+- enables only the APIs it needs;
+- creates a least-privilege service account;
+- stores secrets in **Secret Manager**, typed at prompts and never written to files: the YouTube key, the admin
+  password and an optional Gemini key, plus generated API and MCP tokens and the database URL;
+- creates **Cloud SQL Postgres 16** (pgvector, encrypted connections only, daily backups);
+- deploys **Cloud Run** from the Dockerfile: 0–3 instances, the Cloud SQL socket, JSON logs, admin-only `/docs`;
+- schedules the daily live collection with **Cloud Scheduler**;
+- adds a log-based alert on failed runs and a monthly **budget alert**.
+
+Cloud SQL is billed while it runs, so check the price of your tier first. Then trigger the first collection:
+`gcloud scheduler jobs run fanvaaz-daily --location=asia-south1`.
+
+## Android app (APK)
+
+[`mobile/`](mobile) is a **Capacitor 6** Android shell around the deployed web app. The site is also an installable
+**PWA**, with a manifest and a service worker that caches only the shell, so data is always live. It has its own
+launcher icons and splash screens and is release-signed; the keystore stays outside the repository.
+
+```bash
+cd mobile && npm install
+APP_URL=https://<service-url> npm run sync
+cd android && ./gradlew assembleRelease        # app/build/outputs/apk/release/app-release.apk
+```
+
+Set `FANVAAZ_ANDROID_ASSET_LINK=app.fanvaaz.sov:<SHA-256>` on the server to serve Digital Asset Links.
 
 ---
 
 ## API
 
-| Method | Path | Notes |
-| --- | --- | --- |
-| GET | `/health` | status, version, data present, LLM configured (public) |
-| POST | `/api/v1/auth/signup` · `/login` · `/logout` | accounts and cookie sessions |
-| GET | `/api/v1/auth/me` | the signed-in user |
-| GET | `/api/v1/brief` | one-sentence brief, change since the previous run, open replies |
-| PATCH | `/api/v1/risks/status` | mark a flagged comment handled, dismissed or open |
-| GET / PATCH | `/api/v1/admin/users[/{id}]` | people, roles, access, password reset (admins) |
-| GET | `/api/v1/admin/runs` · `/admin/system` | run history and setup status (admins) |
-| GET | `/api/v1/profile` | what is tracked: focus brand, rivals, keywords |
-| GET / PUT | `/api/v1/admin/profile` | presets and the full profile; switch with `{"preset": id}` or save `{"profile": {...}}` (admins) |
-| GET | `/api/v1/keywords` | `all` + each keyword in the latest run |
-| GET | `/api/v1/sov?keyword=` | brands sorted by SoV with M, E, P, net sentiment |
-| GET | `/api/v1/insights` | insights and recommendations with evidence |
-| GET | `/api/v1/risks?brand=&severity=&limit=` | risk flags with evidence, per-brand summary |
-| GET | `/api/v1/export/{sov,risks,mentions}.csv` | flat CSVs for Tableau / Power BI |
-| POST | `/api/v1/ask` | `{question}` → grounded answer, sources, refusal flag |
-| POST | `/api/v1/runs` | new collection (admins) |
+OpenAPI at `/docs` (admin-only in production). Authentication is a session cookie (with `X-Requested-With: fanvaaz`
+on writes) or `Authorization: Bearer <FANVAAZ_API_TOKEN>`.
 
----
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /health`, `GET /ready` | liveness; database, migrations, YouTube key and LLM checks |
+| `GET /api/v1/brief`, `/sov`, `/keywords`, `/insights`, `/risks` | the daily views |
+| `POST /api/v1/ask` (`thread_id` for follow-ups) | grounded answer, citations, reasoning steps, cache info |
+| `GET /api/v1/runs/{id}/evidence` | evidence pack |
+| `POST /api/v1/runs` · `POST /api/v1/runs/jobs` + `GET …/jobs/{id}` | synchronous collection (Scheduler) or background job with progress (UI) |
+| `GET /api/v1/admin/ai-ops`, `/audit`, `/graphs`, `/traces/{id}` · `GET /metrics` | AI operations, audit trail, Mermaid graphs, spans, Prometheus |
+| `GET/PUT /api/v1/me/prefs` · `DELETE /api/v1/ask/threads/{id}` | long-term memory; forget a conversation |
+| `GET /api/v1/export/{sov,risks,mentions}.csv` | Tableau, Power BI and Excel (formula-injection safe) |
+| `/mcp` | MCP over streamable HTTP |
 
 ## Configuration
 
-All settings are environment variables with the `FANVAAZ_` prefix (see `.env.example`). The LLM is optional; any
-OpenAI-compatible endpoint works (Groq, Gemini, OpenAI, Ollama). Without one, Fanvaaz runs fully on rules.
+Every setting is an environment variable with the `FANVAAZ_` prefix; see [`.env.example`](.env.example). The main
+ones are `YOUTUBE_API_KEY`, `DATABASE_URL`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` (default
+`gemini-flash-latest`), `EMBED_MODEL`, `LLM_ENABLED`, `MAX_COST_PER_RUN_USD`, `MAX_COST_PER_DAY_USD`,
+`MAX_PROMPT_TOKENS`, `PROFILE`, `ADMIN_EMAIL` and `ADMIN_PASSWORD`, `API_TOKEN` and `MCP_TOKEN`.
 
 ## Limitations
 
-- YouTube only. Instagram and X have no free official search API for this use.
-- Sentiment rules and the golden sets are tuned on ceiling-fan comments. For a new category, add its aspect words
-  and risk phrases to the profile and label a few dozen of its comments before trusting the sentiment numbers.
-  Sarcasm and long comparisons still fail (see holdout errors).
-- The red-team corpus is self-written; it is a regression gate, not proof of robustness. `promptfoo/redteam.yaml`
-  generates fresh attacks with an LLM.
-- Engagement uses video-level statistics; a brand mentioned once in a long comment thread gets a share of the
-  whole video's engagement.
+- The LLM-graded metrics (DeepEval, Ragas, the vector leg of retrieval) need a funded Gemini key. Without one,
+  Fanvaaz runs on rules and BM25, and this README reports only numbers that actually ran.
+- Golden sets are small and single-labeller; retrieval judgments are pooled.
+- Rule sentiment still reads "this phone is fire" (praise) literally; that case is a tracked `xfail`.
+- Rate limiting and login throttling are per instance.
 
 ## Project layout
 
 ```
-fanvaaz/         profile, collector, brands, sentiment, extract, sov, risk, insights, ask, guardrails, brief, auth,
-                scheduler, store, api, static/ (pages, hz.css, hz.js fan chart, self-hosted fonts),
-                data/profiles/ (atomberg-fans.json, ather-scooters.json)
-tests/          unit/ (incl. metamorphic), golden/, api/, safety/, e2e/, mobile/, llm/
-postman/        Newman collection + environment
-schemathesis.toml  fuzzing settings (profile cross-field rules may return 422)
-promptfoo/      behavioural checks + generated red team
-load/           k6 script
-scripts/        demo data generator, two-pager writer
+fanvaaz/            app: api, graph/ (two LangGraph agents), ai (gateway), governance, obs, cache, context,
+                    memory, retrieval, evidence, prompts/, schemas, tokens, db (SQLite/Postgres + migrations),
+                    mcp_server, collector, sentiment, risk, sov, insights, static/ (web app + PWA)
+tests/              unit, golden (hand-written + real), safety, api, e2e (Playwright), mobile (Appium),
+                    llm (DeepEval/Ragas), live (YouTube API), fixtures/youtube_snapshot (recorded real data)
+deploy/             gcp_cloud_run.sh
+mobile/             Capacitor Android app
+scripts/            record_snapshot, capture_flows, run_report
+promptfoo/ postman/ load/   behaviour, contract and load suites (CI)
+app_screenshots_screen_recording/   flow screenshots, walkthrough video, APK
 ```
 
-MIT licence. Built by Gurjas Singh Gandhi.
+## References
+
+These study notes shaped the design. They are not included in the repo:
+- *Agentic Design Patterns with LangGraph* and *LangGraph in Production: Architectural Limitations*
+- *Asynchronous Verified Semantic Caching for Tiered LLM Architectures*
+- *Mastering LLM-as-a-Judge* (Galileo), the *RAG Guide* and *Building Agentic RAG*
+- *Prompt Engineering*, *Top 9 LLM API Parameters*, *AIOps & MLOps* and *Designing ML Systems* (O'Reilly)
+
+YouTube data comes from the YouTube Data API v3 and is subject to the YouTube API Services Terms. Comment text is
+PII-redacted, and commenter identities are hashed.
+
+MIT licence.

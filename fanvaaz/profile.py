@@ -2,9 +2,9 @@
 
 Fanvaaz is not tied to one company. A profile names the focus brand, its rivals
 and their aliases, the YouTube searches buyers use, the product aspects worth
-explaining, and any extra risk phrases for the category. The Atomberg ceiling-fan
-profile ships as the worked example; an admin can switch presets or paste their
-own profile in the admin panel, and the next run uses it.
+explaining, and any extra risk phrases for the category. Nothing is tracked by
+default: on first sign-in an admin picks an example template (smartphones, EV
+scooters) or pastes their own profile, and the next run uses it.
 
 Every run stores the profile it used, so changing the profile never rewrites
 history: old runs keep their brands, and "since the last run" only compares runs
@@ -22,7 +22,6 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 PRESET_DIR = Path(__file__).resolve().parent / "data" / "profiles"
-DEFAULT_PRESET = "atomberg-fans"
 
 # One keyword costs about 151 YouTube quota units (search 100 + videos 1 +
 # 50 comment threads); the free daily quota is 10,000. Ten keywords stay well inside it.
@@ -47,9 +46,8 @@ def _clean_terms(values: list[str], what: str, max_items: int, max_len: int = 40
     return out
 
 
-def _bundled_datasets() -> set[str]:
-    # Compare names against a directory listing: never build a path from user input.
-    return {p.name for p in PRESET_DIR.parent.glob("*.json")}
+class NoProfileError(RuntimeError):
+    """Nothing is tracked yet: an admin must choose or write a profile first."""
 
 
 class Profile(BaseModel):
@@ -57,9 +55,9 @@ class Profile(BaseModel):
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    id: str = Field(description="Short slug, e.g. 'atomberg-fans'")
-    name: str = Field(min_length=2, max_length=60, description="Shown to users, e.g. 'Atomberg ceiling fans'")
-    category: str = Field(min_length=2, max_length=40, description="Plural product noun, e.g. 'ceiling fans'")
+    id: str = Field(description="Short slug, e.g. 'smartphones-india'")
+    name: str = Field(min_length=2, max_length=60, description="Shown to users, e.g. 'Smartphones (India)'")
+    category: str = Field(min_length=2, max_length=40, description="Plural product noun, e.g. 'smartphones'")
     focus_brand: str = Field(min_length=1, max_length=40)
     brands: dict[str, list[str]] = Field(description="Brand -> lowercase aliases matched on word boundaries")
     keywords: list[str] = Field(description="YouTube searches, as buyers type them")
@@ -70,9 +68,6 @@ class Profile(BaseModel):
     )
     domain_words: list[str] = Field(
         default_factory=list, description="Extra words that keep 'Ask' questions on topic"
-    )
-    demo_data: str | None = Field(
-        default=None, max_length=60, description="Bundled synthetic dataset, if any"
     )
 
     @field_validator("id")
@@ -129,13 +124,6 @@ class Profile(BaseModel):
             raise ValueError(f"risk categories must be among {', '.join(RISK_CATEGORY_NAMES)}")
         return {k: [w.lower() for w in _clean_terms(ws, "risk term", 40)] for k, ws in v.items()}
 
-    @field_validator("demo_data")
-    @classmethod
-    def _demo(cls, v: str | None) -> str | None:
-        if v is not None and v not in _bundled_datasets():
-            raise ValueError("demo_data must name a dataset bundled with Fanvaaz, or be null")
-        return v
-
     @field_validator("domain_words")
     @classmethod
     def _domain(cls, v: list[str]) -> list[str]:
@@ -189,6 +177,13 @@ def on_change(fn: Callable[[], None]) -> Callable[[], None]:
     return fn
 
 
+def configured() -> bool:
+    """True once a profile is active or one is set in FANVAAZ_PROFILE."""
+    from .config import get_settings
+
+    return _active is not None or bool(get_settings().profile)
+
+
 def active() -> Profile:
     global _active
     if _active is None:
@@ -196,7 +191,12 @@ def active() -> Profile:
             if _active is None:
                 from .config import get_settings
 
-                _active = load(get_settings().profile)
+                ref = get_settings().profile
+                if not ref:
+                    raise NoProfileError(
+                        "Nothing is tracked yet. An admin must choose what to track on the admin page."
+                    )
+                _active = load(ref)
     return _active
 
 
@@ -219,7 +219,10 @@ def reset() -> None:
 
 
 def sync_from(store) -> Profile:
-    """Use the profile an admin saved, if any; otherwise the configured preset."""
+    """Use the profile an admin saved, if any; otherwise the configured preset.
+
+    Raises NoProfileError when neither exists (a fresh install before onboarding).
+    """
     saved = store.saved_profile()
     if saved:
         try:

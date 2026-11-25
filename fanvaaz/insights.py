@@ -12,18 +12,22 @@ import json
 import logging
 from collections import Counter, defaultdict
 
+from . import ai, prompts
 from . import profile as profile_mod
 from .guardrails import safe_output, ungrounded_numbers
-from .llm import LLM, parse_json
+from .llm import LLM
 from .models import KeywordReport, Mention, Video
+from .schemas import RewriteOut
 from .sov import rank_weight
 
 log = logging.getLogger("fanvaaz.insights")
 
-REWRITE_SYSTEM = """You polish marketing insights for a brand's content team.
-Rewrite each insight's text to be clear and actionable in at most 2 sentences.
-Use ONLY the numbers given in its evidence. Do not add any new number, brand, or claim.
-Reply with JSON only: {"items": [{"id": "...", "text": "..."}]}"""
+
+def kw_numbers(keyword: str) -> dict:
+    """Numbers inside a quoted keyword ("best phone under 30000") are part of the evidence."""
+    import re
+
+    return {f"keyword_n{i}": float(n) for i, n in enumerate(re.findall(r"\d+(?:\.\d+)?", keyword))}
 
 
 def pct(x: float) -> str:
@@ -129,7 +133,7 @@ def build(
                 "kind": "insight",
                 "title": "Strongest keyword",
                 "text": f'{focus} is strongest on "{best[0]}" with {pct(best[2])} Share of Voice.',
-                "evidence": {"sov": best[2]},
+                "evidence": {"sov": best[2], **kw_numbers(best[0])},
             }
         )
         if worst[0] != best[0] and worst[3] is not None:
@@ -141,7 +145,7 @@ def build(
                     f"{leader_kw.brand} leads with {pct(leader_kw.sov)}. Target this query with "
                     f"comparison videos and SEO-optimised titles."
                 )
-                ev = {"sov": worst[2], "leader_sov": leader_kw.sov}
+                ev = {"sov": worst[2], "leader_sov": leader_kw.sov, **kw_numbers(worst[0])}
             else:
                 runner = rep.brands[1] if len(rep.brands) > 1 else None
                 text = (
@@ -149,7 +153,7 @@ def build(
                     + (f", but {runner.brand} is close at {pct(runner.sov)}" if runner else "")
                     + ". Defend it with comparison videos and SEO-optimised titles."
                 )
-                ev = {"sov": worst[2], "runner_sov": runner.sov if runner else 0.0}
+                ev = {"sov": worst[2], "runner_sov": runner.sov if runner else 0.0, **kw_numbers(worst[0])}
             out.append(
                 {
                     "id": "weak_keyword",
@@ -250,7 +254,7 @@ def build(
                 "evidence": {"count": len(gaps)},
             }
         )
-    # Risk radar (adapted from the CRIF hackathon offense rating; see risk.py)
+    # Risk radar (weighted escalation scoring; see risk.py)
     if risks:
         mine = [r for r in risks if r["brand"] == focus]
         safety = [r for r in mine if "safety" in r["categories"]]
@@ -264,7 +268,7 @@ def build(
             )
             if safety:
                 text += (
-                    f" {len(safety)} mention a safety issue such as sparking or burning: route them to "
+                    f" {len(safety)} mention a safety issue such as fire or overheating: route them to "
                     f"the quality team today and reply publicly within 24 hours."
                 )
             out.append(
@@ -273,7 +277,13 @@ def build(
                     "kind": "alert",
                     "title": "Risk radar: escalate",
                     "text": text,
-                    "evidence": {"total": len(mine), "high": len(high), "top": top_n, "safety": len(safety)},
+                    "evidence": {
+                        "total": len(mine),
+                        "high": len(high),
+                        "top": top_n,
+                        "safety": len(safety),
+                        **({"reply_within_hours": 24} if safety else {}),
+                    },
                 }
             )
         rivals = Counter(
@@ -310,12 +320,18 @@ def evidence_values(ins: dict) -> list[float]:
 def rewrite_with_llm(insights: list[dict], llm: LLM) -> list[dict]:
     """Let an LLM polish wording; keep a rewrite only if it is numerically grounded."""
     payload = [{"id": i["id"], "text": i["text"], "evidence": i.get("evidence", {})} for i in insights]
-    try:
-        reply = parse_json(llm.complete(REWRITE_SYSTEM, json.dumps({"items": payload}), json_mode=True))
-        new = {it["id"]: it["text"] for it in reply.get("items", []) if isinstance(it, dict) and "text" in it}
-    except Exception as e:  # noqa: BLE001
-        log.warning("LLM rewrite failed, keeping rule text: %s", e)
+    res = ai.call(
+        llm,
+        prompts.get("rewrite"),
+        json.dumps({"items": payload}, ensure_ascii=False),
+        task="rewrite",
+        node="collect.rewrite",
+        schema=RewriteOut,
+    )
+    if not res.ok or res.parsed is None:
+        log.warning("LLM rewrite kept rule text (%s)", res.outcome)
         return insights
+    new = {it.id: it.text for it in res.parsed.items}
     out = []
     for ins in insights:
         cand = new.get(ins["id"])
