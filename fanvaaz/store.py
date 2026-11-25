@@ -11,6 +11,7 @@ import json
 import sqlite3
 import threading
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .models import KeywordReport, Mention, RunInfo, Video
@@ -42,6 +43,23 @@ CREATE INDEX IF NOT EXISTS idx_risks_run ON risks(run_id, brand, severity);
 """
 
 
+def _run_from_row(row) -> RunInfo:
+    prof = json.loads(row[7]) if len(row) > 7 and row[7] else {}
+    extra = {}
+    if prof:
+        extra = {"profile_id": prof["id"], "focus_brand": prof["focus_brand"], "brands": prof["brands"]}
+    return RunInfo(
+        run_id=row[0],
+        source=row[1],
+        created_at=row[2],
+        keywords=json.loads(row[3]),
+        videos=row[4],
+        comments=row[5],
+        quota_units_used=row[6],
+        **extra,
+    )
+
+
 class Store:
     def __init__(self, path: Path):
         self.path = Path(path)
@@ -49,6 +67,13 @@ class Store:
         self._lock = threading.Lock()
         with self._conn() as c:
             c.executescript(SCHEMA)
+            cols = {r[1] for r in c.execute("PRAGMA table_info(runs)")}
+            if "profile" not in cols:  # databases from before tracking profiles
+                c.execute("ALTER TABLE runs ADD COLUMN profile TEXT")
+            c.execute(
+                "CREATE TABLE IF NOT EXISTS app_profile (id INTEGER PRIMARY KEY CHECK (id = 1),"
+                " body TEXT NOT NULL, updated_by TEXT NOT NULL, updated_at TEXT NOT NULL)"
+            )
 
     @contextmanager
     def _conn(self):
@@ -70,7 +95,7 @@ class Store:
     ) -> None:
         with self._lock, self._conn() as c:
             c.execute(
-                "INSERT INTO runs VALUES (?,?,?,?,?,?,?)",
+                "INSERT INTO runs VALUES (?,?,?,?,?,?,?,?)",
                 (
                     info.run_id,
                     info.source,
@@ -79,6 +104,9 @@ class Store:
                     info.videos,
                     info.comments,
                     info.quota_units_used,
+                    json.dumps(
+                        {"id": info.profile_id, "focus_brand": info.focus_brand, "brands": info.brands}
+                    ),
                 ),
             )
             c.executemany(
@@ -107,15 +135,7 @@ class Store:
             row = c.execute("SELECT * FROM runs ORDER BY created_at DESC LIMIT 1").fetchone()
         if not row:
             return None
-        return RunInfo(
-            run_id=row[0],
-            source=row[1],
-            created_at=row[2],
-            keywords=json.loads(row[3]),
-            videos=row[4],
-            comments=row[5],
-            quota_units_used=row[6],
-        )
+        return _run_from_row(row)
 
     def report(self, run_id: str, keyword: str) -> KeywordReport | None:
         with self._conn() as c:
@@ -165,18 +185,7 @@ class Store:
     def runs(self, limit: int = 30) -> list[RunInfo]:
         with self._conn() as c:
             rows = c.execute("SELECT * FROM runs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
-        return [
-            RunInfo(
-                run_id=r[0],
-                source=r[1],
-                created_at=r[2],
-                keywords=json.loads(r[3]),
-                videos=r[4],
-                comments=r[5],
-                quota_units_used=r[6],
-            )
-            for r in rows
-        ]
+        return [_run_from_row(r) for r in rows]
 
     def previous_run(self, run_id: str, same_source: bool = True) -> RunInfo | None:
         cur = next((r for r in self.runs(200) if r.run_id == run_id), None)
@@ -195,7 +204,6 @@ class Store:
     def set_risk_status(
         self, comment_id: str, brand: str, status: str, user_email: str, note: str = ""
     ) -> dict:
-        from datetime import UTC, datetime
 
         now = datetime.now(UTC).isoformat(timespec="seconds")
         with self._lock, self._conn() as c:
@@ -220,3 +228,19 @@ class Store:
         return {
             (r[0], r[1]): {"status": r[2], "note": r[3], "updated_by": r[4], "updated_at": r[5]} for r in rows
         }
+
+    # ---- tracking profile chosen by an admin -------------------------------
+    def saved_profile(self) -> dict | None:
+        with self._conn() as c:
+            row = c.execute("SELECT body, updated_by, updated_at FROM app_profile WHERE id = 1").fetchone()
+        if not row:
+            return None
+        return {"profile": json.loads(row[0]), "updated_by": row[1], "updated_at": row[2]}
+
+    def save_profile(self, body: dict, user_email: str) -> None:
+        now = datetime.now(UTC).isoformat(timespec="seconds")
+        with self._lock, self._conn() as c:
+            c.execute(
+                "INSERT OR REPLACE INTO app_profile VALUES (1, ?, ?, ?)",
+                (json.dumps(body, ensure_ascii=False), user_email, now),
+            )

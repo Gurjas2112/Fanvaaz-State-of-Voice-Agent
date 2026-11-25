@@ -6,7 +6,7 @@ lawsuit +30, harassment +50) and tagged risk categories for a Tableau dashboard.
 
 What changed for real-world use, and why:
 
-* Fan-specific categories: a "sparking" comment is a safety escalation; a
+* Category-aware terms: a "sparking" comment is a safety escalation; a
   generic 4,472-word negative list is replaced by the brand-targeted sentiment
   engine.
 * Negation-aware: "no sparking issue at all" does not fire (the original counted
@@ -24,7 +24,9 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 
+from . import profile
 from .brands import find_spans
 from .models import Mention, Video
 from .sentiment import NEGATORS, _clauses
@@ -47,10 +49,6 @@ RISK_CATEGORIES: dict[str, dict] = {
             "smoke",
             "smoking",
             "melted",
-            "fell down",
-            "fell off",
-            "blade broke",
-            "came off the ceiling",
             "aag",
             "jal gaya",
             "जल गया",
@@ -82,15 +80,11 @@ RISK_CATEGORIES: dict[str, dict] = {
             "stopped working",
             "not working",
             "dead",
-            "motor burnt",
             "burnt",
             "defective",
             "faulty",
-            "pcb",
-            "board failed",
             "error code",
             "replaced twice",
-            "keeps disconnecting",
             "broke",
             "broken",
             "kharab",
@@ -126,7 +120,18 @@ def _term_re(term: str) -> re.Pattern[str]:
     return re.compile(r"(?<![\w])" + body + r"(?![\w])", re.IGNORECASE)
 
 
-_COMPILED = {cat: [(t, _term_re(t)) for t in spec["terms"]] for cat, spec in RISK_CATEGORIES.items()}
+@lru_cache(maxsize=1)
+def _compiled() -> dict[str, list[tuple[str, re.Pattern[str]]]]:
+    """Base terms that hold for any physical product, plus the profile's own."""
+    extra = profile.active().risk_terms
+    out = {}
+    for cat, spec in RISK_CATEGORIES.items():
+        terms = list(dict.fromkeys([*spec["terms"], *extra.get(cat, [])]))
+        out[cat] = [(t, _term_re(t)) for t in terms]
+    return out
+
+
+profile.on_change(_compiled.cache_clear)
 _TOK = re.compile(r"[a-z']+")
 
 
@@ -148,7 +153,7 @@ def _negated(clause: str, start: int) -> bool:
 def find_risks(text: str) -> list[RiskHit]:
     hits: list[RiskHit] = []
     for cs, ce, clause, _ in _clauses(text):
-        for cat, terms in _COMPILED.items():
+        for cat, terms in _compiled().items():
             for term, rx in terms:
                 m = rx.search(clause)
                 if m and not _negated(clause, m.start()):

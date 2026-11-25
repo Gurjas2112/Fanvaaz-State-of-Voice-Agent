@@ -1,0 +1,172 @@
+{
+  "id": "atomberg-fans",
+  "name": "Atomberg ceiling fans",
+  "category": "ceiling fans",
+  "focus_brand": "Atomberg",
+  "brands": {
+    "Atomberg": [
+      "atomberg",
+      "atom berg",
+      "atomburg",
+      "renesa",
+      "efficio",
+      "ameza",
+      "एटमबर्ग"
+    ],
+    "Havells": [
+      "havells",
+      "havels",
+      "हैवेल्स"
+    ],
+    "Crompton": [
+      "crompton",
+      "energion",
+      "क्रॉम्पटन"
+    ],
+    "Orient": [
+      "orient electric",
+      "orient",
+      "aeroquiet"
+    ],
+    "Usha": [
+      "usha"
+    ],
+    "Bajaj": [
+      "bajaj"
+    ],
+    "Polycab": [
+      "polycab"
+    ],
+    "Superfan": [
+      "superfan",
+      "versa drives"
+    ],
+    "Panasonic": [
+      "panasonic"
+    ],
+    "Luminous": [
+      "luminous fan",
+      "luminous fans",
+      "luminous"
+    ]
+  },
+  "keywords": [
+    "smart fan",
+    "BLDC fan",
+    "best ceiling fan India",
+    "energy saving fan",
+    "ceiling fan with remote",
+    "smart ceiling fan app"
+  ],
+  "aspects": {
+    "energy saving": [
+      "bill",
+      "electricity",
+      "power saving",
+      "energy",
+      "saves",
+      "saving",
+      "watt",
+      "bijli",
+      "inverter"
+    ],
+    "noise": [
+      "noise",
+      "noisy",
+      "silent",
+      "quiet",
+      "quieter",
+      "louder",
+      "sound",
+      "humming",
+      "awaaz"
+    ],
+    "remote & app": [
+      "remote",
+      "app",
+      "wifi",
+      "wi-fi",
+      "alexa",
+      "google home",
+      "smart"
+    ],
+    "air delivery": [
+      "air",
+      "speed",
+      "breeze",
+      "hawa",
+      "rpm",
+      "cmm"
+    ],
+    "service": [
+      "service",
+      "installation",
+      "technician",
+      "warranty",
+      "customer care",
+      "support",
+      "replacement"
+    ],
+    "price": [
+      "price",
+      "cost",
+      "expensive",
+      "cheap",
+      "paisa",
+      "value for money",
+      "costly",
+      "mehenga"
+    ],
+    "build & design": [
+      "design",
+      "look",
+      "looks",
+      "build",
+      "quality",
+      "finish",
+      "wobble",
+      "colour",
+      "color"
+    ]
+  },
+  "playbook": {
+    "remote & app": "publish short how-to videos on remote pairing and app setup, and pin them under top reviews",
+    "noise": "lead creatives with silent-operation demos recorded on camera",
+    "energy saving": "show a before/after electricity bill comparison in creator content",
+    "service": "route these complaints to service ops and showcase installation turnaround",
+    "price": "frame price as payback: savings per year against the price premium",
+    "air delivery": "publish air-delivery tests at each speed next to competitor fans",
+    "build & design": "feature finishes and design in Shorts aimed at home-decor audiences"
+  },
+  "risk_terms": {
+    "safety": [
+      "fell down",
+      "fell off",
+      "blade broke",
+      "came off the ceiling"
+    ],
+    "product_failure": [
+      "motor burnt",
+      "pcb",
+      "board failed",
+      "keeps disconnecting"
+    ]
+  },
+  "domain_words": [
+    "fan",
+    "fans",
+    "ceiling",
+    "bldc",
+    "remote",
+    "bill",
+    "energy",
+    "noise",
+    "air",
+    "speed",
+    "saving",
+    "app",
+    "smart",
+    "installation"
+  ],
+  "demo_data": "demo_raw.json"
+}

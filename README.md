@@ -1,13 +1,15 @@
 # Fanvaaz
 
-**Hear what India says about your fans.** Atomberg's daily YouTube Share of Voice desk, with a reply inbox for
-risky comments, and a test harness that grades the AI behind it.
+**Hear what your fans are saying.** A daily YouTube Share of Voice desk for any brand, with a reply inbox
+for risky comments, and a test harness that grades the AI behind it.
 
-*Fanvaaz* = *fan* + *awaaz* (Hindi for voice). "Fan" in both senses: the ceiling fans Atomberg makes and the fans who talk about them.
+*Fanvaaz* = *fan* + *awaaz* (Hindi for voice): what your fans are saying about you.
 
-Fanvaaz searches YouTube for "smart fan" and five related keywords, reads the top 50 videos and their top
-comments, finds every fan-brand mention, scores the sentiment aimed at each brand (English and Hinglish), and
-reports Atomberg's Share of Voice against nine competitors. It then writes evidence-backed recommendations for the
+You tell Fanvaaz your brand, its rivals and the searches your buyers use (a **tracking profile**). It searches
+YouTube for each keyword, reads the top 50 videos and their top comments, finds every brand mention, scores the
+sentiment aimed at each brand (English and Hinglish), and reports your Share of Voice against the rivals.
+It ships with two ready-made profiles: **Atomberg ceiling fans** (the worked example and the bundled demo data:
+"smart fan" plus five related searches, nine rivals) and **Ather electric scooters**. It then writes evidence-backed recommendations for the
 content and marketing team, and lets them ask follow-up questions in plain language.
 
 Every stage is guarded and gated in CI: golden-set accuracy, metamorphic properties, LLM faithfulness
@@ -44,6 +46,35 @@ python scripts/two_pager.py        # writes docs/TWO_PAGER.md for the submission
 
 Docker: `docker compose up --build` (seeds a demo run on first boot, serves on :8000).
 
+## Track any brand
+
+What Fanvaaz tracks is data, not code. A tracking profile names:
+
+| Field | Example (Ather) | Used for |
+| --- | --- | --- |
+| `focus_brand`, `brands` | `Ather` vs Ola Electric, TVS iQube, Bajaj Chetak, Hero Vida, each with the spellings people use (`"ola s1"`, `"iqube"`) | brand matching, ranking, whose inbox comes first |
+| `keywords` | `best electric scooter India`, `electric scooter range test` (up to 10, about 151 API units each) | YouTube searches |
+| `category` | `electric scooters` | LLM prompts, the Ask box |
+| `aspects`, `playbook` | `range`, `charging`, `service` → "publish real-world range tests" | *why* people praise or complain, and what to do |
+| `risk_terms` | `battery fire`, `brake failure` | extra risk phrases on top of the generic ones (fire, shock, consumer court, refund, not working) |
+
+Switch or define one in three ways:
+
+```bash
+fanvaaz profile list                      # presets; * marks the one in use
+fanvaaz profile use ather-scooters        # or: fanvaaz profile use my-brand.json
+fanvaaz profile show > my-brand.json      # start your own from the current one
+```
+
+or in **Admin → What Fanvaaz tracks** (pick a preset, or edit the profile and save), or with
+`FANVAAZ_PROFILE=<id or path>` as the default for a new install. Every profile is validated before it is saved: the
+focus brand must be one of the brands, an alias can belong to only one brand, there are 2 to 20 brands and 1 to 10
+keywords, and errors say which field is wrong.
+
+Each run stores the profile it used, so switching never rewrites history: past runs keep their brands, and
+"since the last run" only compares runs that tracked the same focus brand. Only the Atomberg profile has bundled
+demo data; any other profile collects live from YouTube.
+
 ---
 
 ## The product
@@ -51,9 +82,9 @@ Docker: `docker compose up --build` (seeds a demo run on first boot, serves on :
 | Page | Who | What it is for |
 | --- | --- | --- |
 | `/` | anyone | What Fanvaaz does, with an example share-of-voice fan; sign in or create an account |
-| `/signup`, `/login` | anyone | Accounts; sign-up can be limited to company domains (`FANVAAZ_SIGNUP_DOMAINS=atomberg.com`) |
+| `/signup`, `/login` | anyone | Accounts; sign-up can be limited to company domains (`FANVAAZ_SIGNUP_DOMAINS=yourbrand.com`) |
 | `/app` | analysts, admins | **Today**: one-sentence brief with change since the last run · **Voice**: the fan chart and ranking per search term · **Reply inbox**: risk comments to mark handled or dismissed (status carries over to later runs) · **This week**: recommendations · **Ask**: guarded Q&A · CSV downloads |
-| `/admin` | admins | Collect from YouTube or load demo data, run history and API units, people (role, access, password reset), setup status |
+| `/admin` | admins | What Fanvaaz tracks (preset or custom profile), collect from YouTube or load demo data, run history and API units, people (role, access, password reset), setup status |
 
 No other pages: password reset is done by an admin (no email service needed), and settings live in environment
 variables shown on the admin page.
@@ -64,7 +95,7 @@ up 1.2 pts since the last run. 24 safety comments are waiting for a reply."), th
 collecting twice.
 
 **Visual identity.** The share of voice is drawn as a ceiling fan: one swept blade per brand, its length growing
-with the square root of the share (so blade *area* stays honest), Atomberg in breeze teal `#0F8B8D`. It spins once
+with the square root of the share (so blade *area* stays honest), your brand in breeze teal `#0F8B8D`. It spins once
 on load and stays still under `prefers-reduced-motion`. Type is Bricolage Grotesque for headlines and Atkinson
 Hyperlegible for reading, both self-hosted (SIL OFL), so the pages make no third-party requests.
 
@@ -150,7 +181,7 @@ rank 50 = 0.18), because viewers see the top results far more than the 50th. For
 | **M**, mention share | rank-weighted mentions; title counts 2, description 1, each comment 1 |
 | **E**, engagement share | rank-weighted engagement `ln(1+views) + 2 ln(1+likes) + 3 ln(1+comments)`, split among the brands a video mentions. Logs stop one viral video from dominating |
 | **P**, Share of Positive Voice | rank-weighted positive mentions |
-| **SoV** | **0.3 M + 0.4 E + 0.3 P** (weights in `config.py`; all parts are reported separately) |
+| **SoV** | **0.3 M + 0.4 E + 0.3 P** (weights in settings, `FANVAAZ_W_*`; all parts are reported separately) |
 
 **Why N = 50:** one `search.list` page returns 50 results; very few viewers go past it, and the rank weight already
 makes result 50 count 18% as much as result 1. Cost: 100 (search) + 1 (stats) + 50 (comments) ≈ 151 units per
@@ -162,16 +193,16 @@ keyword, ≈ 906 for six keywords against a 10,000-unit free daily quota, so the
 
 | Gate | Tool | Threshold | Measured (this repo, demo data) |
 | --- | --- | --- | --- |
-| Unit, collector (mocked YouTube), risk rules, auth | pytest, httpx MockTransport | all pass | pass (**165 tests** incl. E2E; 1 documented xfail) |
+| Unit, collector (mocked YouTube), risk rules, auth, tracking profiles | pytest, httpx MockTransport | all pass | pass (**188 tests** incl. E2E; 1 documented xfail) |
 | Metamorphic properties | Hypothesis | 0 violations | comment order, brand-less comments, alias spelling, antisymmetric comparatives: all hold |
 | Brand detection | golden **holdout**, 50 comments / 59 brand pairs | F1 ≥ 0.95 | **F1 1.00** |
 | Brand-targeted sentiment, rules only | golden **holdout** | macro-F1 ≥ 0.80 | **macro-F1 0.84** (dev set: 0.99) |
 | Red-team refusal | own corpus, 40 attacks / 30 benign | ≥ 95% blocked, ≤ 5% false refusals | **40/40 blocked, 0/30 false refusals** |
 | LLM guard paths | fake LLMs that lie, leak PII, invent brands | must be rejected | all rejected |
 | promptfoo | behaviour + refusal on live `/ask` | all pass | **11/11** |
-| API contract | Postman + Newman | all pass | **58/58 assertions, 25 requests** incl. sign-up, cookie session, CSRF, roles |
-| API fuzzing | Schemathesis (OpenAPI, stateful) | 0 failures | **4,689 cases over 5 seeds, 0 failures** after fixing 7 findings (below) |
-| Web E2E | Playwright | all pass | **18/18**: landing, sign-up/sign-in errors, open redirect, brief, inbox triage, admin, roles, XSS, phone layout |
+| API contract | Postman + Newman | all pass | **65/65 assertions, 28 requests** incl. sign-up, cookie session, CSRF, roles, tracking profile |
+| API fuzzing | Schemathesis (OpenAPI, stateful) | 0 failures | **5,724 cases over 5 seeds, 0 failures** after fixing 9 findings (below) |
+| Web E2E | Playwright | all pass | **19/19**: landing, sign-up/sign-in errors, open redirect, brief, inbox triage, admin, switching the tracked brand, roles, XSS, phone layout |
 | CSV export safety | pytest | formulas neutralised | `=`, `+`, `-`, `@` cells prefixed with `'` |
 | Load | k6, 55 req/s for 60 s, authenticated | p95 < 500 ms, < 1% errors | **3,301 requests, 0 errors, p95 7.1 ms (reads), 9.5 ms (ask)**, 1 worker |
 | Faithfulness / hallucination | DeepEval, Ragas | faithfulness ≥ 0.8 | needs an LLM key: `make llm-evals` |
@@ -185,6 +216,12 @@ the LLM relabel path, which is validated by the DeepEval/Ragas suite. Both sets 
 one person; add real labelled comments from a live run before trusting decimals.
 
 **What the harness caught while building it**
+
+- **Schemathesis, after adding tracking profiles, found 2 more defects and one process bug**: a 405 on
+  `/api/v1/admin/profile` sent `Allow: GET` although PUT works (Starlette reads only the first route on a path;
+  `Allow` is now built from every route); a 5,000-character `demo_data` name crashed the file check with a 500 (names
+  are now matched against a listing of bundled files, never turned into a path); and the fuzzer, acting as an
+  admin, switched the tracked brand mid-CI, so the promptfoo checks after it failed. Fuzzing now runs last.
 
 - **Schemathesis, after adding accounts, found 7 real defects**: a user id of 2^63 crashed the server (SQLite
   overflow, 500); `"active": 0` was silently coerced to `false` and deactivated an admin; password reset re-validated
@@ -212,7 +249,7 @@ Reports land in `reports/` (golden, safety, promptfoo, k6, DeepEval, Ragas) and 
 | Job | Runs |
 | --- | --- |
 | offline-gates | ruff, unit, metamorphic, golden, API, safety |
-| live-api | starts the API, then Newman, Schemathesis, promptfoo, k6 |
+| live-api | starts the API, then Newman, promptfoo, k6, and Schemathesis last (it changes state) |
 | e2e-web | Playwright with traces on failure |
 | mobile-appium | Android 13 emulator, Appium 2, UiAutomator2 |
 | llm-evals | DeepEval + Ragas, only when `RUN_LLM_EVALS=true` and LLM secrets are set |
@@ -231,6 +268,8 @@ Reports land in `reports/` (golden, safety, promptfoo, k6, DeepEval, Ragas) and 
 | PATCH | `/api/v1/risks/status` | mark a flagged comment handled, dismissed or open |
 | GET / PATCH | `/api/v1/admin/users[/{id}]` | people, roles, access, password reset (admins) |
 | GET | `/api/v1/admin/runs` · `/admin/system` | run history and setup status (admins) |
+| GET | `/api/v1/profile` | what is tracked: focus brand, rivals, keywords |
+| GET / PUT | `/api/v1/admin/profile` | presets and the full profile; switch with `{"preset": id}` or save `{"profile": {...}}` (admins) |
 | GET | `/api/v1/keywords` | `all` + each keyword in the latest run |
 | GET | `/api/v1/sov?keyword=` | brands sorted by SoV with M, E, P, net sentiment |
 | GET | `/api/v1/insights` | insights and recommendations with evidence |
@@ -249,7 +288,9 @@ OpenAI-compatible endpoint works (Groq, Gemini, OpenAI, Ollama). Without one, Fa
 ## Limitations
 
 - YouTube only. Instagram and X have no free official search API for this use.
-- Sentiment rules are tuned on fan vocabulary; sarcasm and long comparisons still fail (see holdout errors).
+- Sentiment rules and the golden sets are tuned on ceiling-fan comments. For a new category, add its aspect words
+  and risk phrases to the profile and label a few dozen of its comments before trusting the sentiment numbers.
+  Sarcasm and long comparisons still fail (see holdout errors).
 - The red-team corpus is self-written; it is a regression gate, not proof of robustness. `promptfoo/redteam.yaml`
   generates fresh attacks with an LLM.
 - Engagement uses video-level statistics; a brand mentioned once in a long comment thread gets a share of the
@@ -258,10 +299,12 @@ OpenAI-compatible endpoint works (Groq, Gemini, OpenAI, Ollama). Without one, Fa
 ## Project layout
 
 ```
-fanvaaz/         collector, brands, sentiment, extract, sov, risk, insights, ask, guardrails, brief, auth,
-                scheduler, store, api, static/ (pages, hz.css, hz.js fan chart, self-hosted fonts)
+fanvaaz/         profile, collector, brands, sentiment, extract, sov, risk, insights, ask, guardrails, brief, auth,
+                scheduler, store, api, static/ (pages, hz.css, hz.js fan chart, self-hosted fonts),
+                data/profiles/ (atomberg-fans.json, ather-scooters.json)
 tests/          unit/ (incl. metamorphic), golden/, api/, safety/, e2e/, mobile/, llm/
 postman/        Newman collection + environment
+schemathesis.toml  fuzzing settings (profile cross-field rules may return 422)
 promptfoo/      behavioural checks + generated red team
 load/           k6 script
 scripts/        demo data generator, two-pager writer

@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fanvaaz.config import DEFAULT_KEYWORDS, FOCUS_BRAND, get_settings
+from fanvaaz.config import get_settings
 from fanvaaz.store import Store
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -75,7 +75,7 @@ def main() -> None:
     demo = run.source == "synthetic-demo"
 
     lines = [
-        "# Fanvaaz: Atomberg's Share of Voice on YouTube",
+        f"# Fanvaaz: {run.focus_brand}'s Share of Voice on YouTube",
         "",
         "## Page 1: How it works",
         "",
@@ -83,7 +83,7 @@ def main() -> None:
         "finds brand mentions, scores brand-targeted sentiment, computes Share of Voice and writes recommendations. "
         "A guarded Q&A lets the team ask follow-up questions.",
         "",
-        f"**Keywords ({len(DEFAULT_KEYWORDS)}):** " + ", ".join(DEFAULT_KEYWORDS),
+        f"**Keywords ({len(run.keywords)}):** " + ", ".join(run.keywords),
         "",
         "**Why N = 50:** one YouTube search page returns 50 results; few viewers scroll past it, and the rank "
         "weight below already makes result 50 count 18% of result 1. Cost: ~151 API units per keyword, ~906 of the "
@@ -136,11 +136,11 @@ def main() -> None:
     ]
     for k, r in reports.items():
         names = [b.brand for b in r.brands]
-        me = next((b for b in r.brands if b.brand == FOCUS_BRAND), None)
+        me = next((b for b in r.brands if b.brand == run.focus_brand), None)
         lead = r.brands[0] if r.brands else None
         lines.append(
             f"| {'All keywords' if k == 'all' else k} | {pct(me.sov) if me else '0%'} | "
-            f"{names.index(FOCUS_BRAND) + 1 if me else '-'} of {len(names)} | "
+            f"{names.index(run.focus_brand) + 1 if me else '-'} of {len(names)} | "
             f"{lead.brand} ({pct(lead.sov)}) | {pct(me.positive_share) if me else '-'} |"
         )
     lines += ["", "**Insights and recommendations**", ""]

@@ -1,6 +1,7 @@
 "use strict";
 (() => {
-  const { api, el, pct, $, toast, fan, FOCUS } = HZ;
+  const { api, el, pct, $, toast, fan } = HZ;
+  let FOCUS = "";
   let inboxStatus = "open";
 
   function fmtDate(iso) {
@@ -20,6 +21,9 @@
       $("brief-sentence").textContent = "No data yet. An admin can start the first run from the admin page.";
       return;
     }
+    FOCUS = b.focus_brand;
+    HZ.setFocus(FOCUS);
+    $("fact-sov-k").textContent = `${FOCUS}'s share of voice`;
     $("brief-sentence").textContent = b.sentence;
     $("fact-sov").textContent = pct(b.sov);
     const d = $("fact-delta");
@@ -43,6 +47,8 @@
   async function loadVoice(keyword) {
     const data = await api(`/api/v1/sov?keyword=${encodeURIComponent(keyword)}`);
     const brands = data.report.brands;
+    FOCUS = data.focus_brand;
+    HZ.setFocus(FOCUS);
     fan($("sov-fan"), brands, { title: `Share of voice for ${keyword === "all" ? "all search terms" : keyword}` });
     const max = Math.max(...brands.map((b) => b.sov), 0.0001);
     $("rank-list").replaceChildren(...brands.map((b, i) => {
@@ -54,8 +60,8 @@
     }));
     const me = brands.find((b) => b.brand === FOCUS);
     $("breakdown").textContent = me
-      ? `Atomberg: ${pct(me.mention_share)} of mentions, ${pct(me.engagement_share)} of engagement, ${pct(me.positive_share)} of positive comments, across ${data.report.videos} videos.`
-      : "Atomberg was not mentioned for this search term.";
+      ? `${FOCUS}: ${pct(me.mention_share)} of mentions, ${pct(me.engagement_share)} of engagement, ${pct(me.positive_share)} of positive comments, across ${data.report.videos} videos.`
+      : `${FOCUS} was not mentioned for this search term.`;
   }
 
   async function loadKeywords() {
@@ -151,11 +157,17 @@
     }
   }
 
+  async function loadProfile() {
+    const p = await api("/api/v1/profile");
+    document.title = `Fanvaaz: ${p.name}`;
+    $("ask-input").placeholder = `What do people say about ${p.focus_brand} and its ${p.category}?`;
+  }
+
   async function init() {
     $("signout").addEventListener("click", HZ.signOut);
     $("ask-form").addEventListener("submit", ask);
     try {
-      await loadMe();
+      await Promise.all([loadMe(), loadProfile()]);
       await loadBrief();
       await Promise.all([loadKeywords(), initInbox(), loadPlan()]);
     } catch (e) {

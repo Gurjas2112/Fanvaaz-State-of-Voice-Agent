@@ -71,3 +71,7 @@ class RunInfo(BaseModel):
     videos: int
     comments: int
     quota_units_used: int = 0
+    # The tracking profile this run used; old databases without it read as Atomberg.
+    profile_id: str = "atomberg-fans"
+    focus_brand: str = "Atomberg"
+    brands: list[str] = Field(default_factory=list)

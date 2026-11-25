@@ -4,7 +4,7 @@
 
 **AI agent:** searches YouTube for each keyword, reads the top N = 50 videos and up to 100 top comments each, finds brand mentions, scores brand-targeted sentiment, computes Share of Voice and writes recommendations. A guarded Q&A lets the team ask follow-up questions.
 
-**Keywords (6):** smart fan, BLDC fan, best ceiling fan India, energy saving fan, ceiling fan with remote, smart ceiling fan app
+**Keywords (6):** BLDC fan, best ceiling fan India, ceiling fan with remote, energy saving fan, smart ceiling fan app, smart fan
 
 **Why N = 50:** one YouTube search page returns 50 results; few viewers scroll past it, and the rank weight below already makes result 50 count 18% of result 1. Cost: ~151 API units per keyword, ~906 of the 10,000 free daily units for all six.
 
@@ -41,7 +41,7 @@
 
 > **TEMPLATE ONLY: the numbers below come from the synthetic demo dataset, not YouTube.** Run `fanvaaz run --source youtube` and re-run this script before submitting.
 
-Run `20261125T103621-a647e3` · 300 result slots · 5640 comments · source: synthetic-demo
+Run `20261125T122844-057ae9` · 300 result slots · 5640 comments · source: synthetic-demo
 
 | Keyword | Atomberg SoV | Rank | Leader (SoV) | Atomberg positive share |
 | --- | --- | --- | --- | --- |

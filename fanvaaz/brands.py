@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 from functools import lru_cache
 
-from .config import BRAND_ALIASES
+from . import profile
 
 
 @dataclass(frozen=True)
@@ -28,10 +28,15 @@ def _alias_pattern(alias: str) -> str:
     return r"\s+".join(parts)
 
 
+@profile.on_change
+def _reset() -> None:
+    _compiled.cache_clear()
+
+
 @lru_cache(maxsize=1)
 def _compiled() -> list[tuple[str, str, re.Pattern[str]]]:
     entries: list[tuple[str, str]] = [
-        (brand, alias) for brand, aliases in BRAND_ALIASES.items() for alias in aliases
+        (brand, alias) for brand, aliases in profile.active().brands.items() for alias in aliases
     ]
     # Longest alias first so "orient electric" wins over "orient".
     entries.sort(key=lambda e: len(e[1]), reverse=True)
@@ -66,4 +71,4 @@ def brands_in(text: str) -> list[str]:
 
 
 def all_brands() -> list[str]:
-    return list(BRAND_ALIASES)
+    return list(profile.active().brands)

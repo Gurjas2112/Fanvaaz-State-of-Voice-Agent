@@ -27,7 +27,7 @@ e2e:                ## Playwright (starts its own server)
 api-contract:       ## Postman collection via Newman against a running server
 	npx newman run postman/Fanvaaz.postman_collection.json -e postman/local.postman_environment.json --env-var apiToken=$$FANVAAZ_API_TOKEN
 
-fuzz:               ## Schemathesis against a running server
+fuzz:               ## Schemathesis against a running server (changes state: run it last)
 	schemathesis run http://127.0.0.1:8000/openapi.json --checks all --max-examples 40 --exclude-path /api/v1/runs \
 	  -H "Authorization: Bearer $$FANVAAZ_API_TOKEN" -H "X-Requested-With: fanvaaz"
 

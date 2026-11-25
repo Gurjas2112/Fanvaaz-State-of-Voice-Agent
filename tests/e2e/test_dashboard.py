@@ -65,7 +65,8 @@ def sign_in(page, url, email, password, next_path="/app"):
 # ---- public pages ------------------------------------------------------------
 def test_landing_shows_fan_and_routes_to_auth(page, server_url):
     page.goto(server_url + "/")
-    expect(page.get_by_role("heading", level=1)).to_have_text("Hear what India says about your fans.")
+    expect(page.get_by_role("heading", level=1)).to_have_text("Hear what your fans are saying.")
+    expect(page.get_by_test_id("setup-note")).to_contain_text("any brand")
     expect(page.get_by_test_id("hero-fan").locator("path.blade")).to_have_count(8)
     page.get_by_test_id("cta-signup").click()
     expect(page).to_have_url(re.compile(r"/signup$"))
@@ -119,6 +120,9 @@ def test_brief_and_facts(page, server_url, analyst):
     expect(page.get_by_test_id("brief-sentence")).to_contain_text("Atomberg holds")
     expect(page.get_by_test_id("fact-sov")).to_have_text(re.compile(r"^\d+\.\d%$"))
     expect(page.get_by_test_id("fact-rank")).to_have_text(re.compile(r"^#\d+ of \d+$"))
+    expect(page.locator("#fact-sov-k")).to_have_text(
+        "Atomberg's share of voice"
+    )  # from the run, not hard-coded
     expect(page.get_by_test_id("admin-link")).to_be_hidden()  # analysts don't see admin
 
 
@@ -208,6 +212,30 @@ def test_admin_panel_people_runs_and_setup(page, server_url, analyst):
     page.get_by_test_id(f"role-{analyst}").select_option("analyst")
     expect(page.get_by_role("status")).to_contain_text("is now an analyst")
     expect(page.get_by_test_id("system-panel")).to_contain_text("Not set")
+
+
+def test_admin_switches_what_is_tracked_and_back(page, server_url):
+    sign_in(page, server_url, *ADMIN, next_path="/admin")
+    current = page.get_by_test_id("track-current")
+    expect(current).to_contain_text("Atomberg")
+    expect(page.get_by_test_id("run-demo")).to_be_enabled()
+    try:
+        page.get_by_test_id("preset").select_option("ather-scooters")
+        page.get_by_test_id("use-preset").click()
+        expect(page.get_by_role("status")).to_have_text("Setup switched. Collect data to see it.")
+        expect(current).to_contain_text("Ola Electric")
+        expect(page.get_by_test_id("run-demo")).to_be_disabled()  # no scooter demo data ships
+        # A custom profile with a mistake gets a readable error and changes nothing.
+        page.locator("details.json-edit summary").click()
+        box = page.get_by_test_id("profile-json")
+        box.fill(box.input_value().replace('"focus_brand": "Ather"', '"focus_brand": "Nobody"'))
+        page.get_by_test_id("save-profile").click()
+        expect(page.get_by_test_id("profile-error")).to_contain_text("must be one of the tracked brands")
+        expect(current).to_contain_text("Ather")
+    finally:
+        page.get_by_test_id("preset").select_option("atomberg-fans")
+        page.get_by_test_id("use-preset").click()
+        expect(current).to_contain_text("Havells")
 
 
 # ---- mobile ------------------------------------------------------------------

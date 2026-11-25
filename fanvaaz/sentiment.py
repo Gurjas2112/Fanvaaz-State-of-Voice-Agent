@@ -1,4 +1,4 @@
-"""Brand-targeted sentiment for English + Hinglish fan comments.
+"""Brand-targeted sentiment for English + Hinglish product comments.
 
 The rule engine is the always-available baseline and the fallback whenever the
 LLM is off, slow or returns something invalid. It handles the cases that break
@@ -15,8 +15,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from . import profile
 from .brands import Span, find_spans
-from .config import ASPECTS
 from .guardrails import is_injection
 from .models import Sentiment
 
@@ -32,7 +32,6 @@ POSITIVE_PHRASES = [
     "bill came down",
     "highly recommend",
     "go for it",
-    "best fan",
     "no noise",
     "no sound",
     "zero noise",
@@ -46,7 +45,6 @@ NEGATIVE_PHRASES = [
     "don't buy",
     "do not buy",
     "never buy",
-    "worst fan",
     "remote not working",
     "app not working",
     "no response",
@@ -262,7 +260,7 @@ def _label(score: float) -> Sentiment:
 def aspects_of(text: str) -> list[str]:
     low = text.lower()
     found = []
-    for aspect, words in ASPECTS.items():
+    for aspect, words in profile.active().aspects.items():
         if any(re.search(rf"(?<![\w]){re.escape(w)}(?![\w])", low) for w in words):
             found.append(aspect)
     return found

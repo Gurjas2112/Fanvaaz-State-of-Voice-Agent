@@ -1,0 +1,139 @@
+{
+  "id": "ather-scooters",
+  "name": "Ather electric scooters",
+  "category": "electric scooters",
+  "focus_brand": "Ather",
+  "brands": {
+    "Ather": [
+      "ather",
+      "ather energy",
+      "rizta",
+      "450x",
+      "450s",
+      "ather 450"
+    ],
+    "Ola Electric": [
+      "ola electric",
+      "ola s1",
+      "ola scooter",
+      "s1 pro"
+    ],
+    "TVS iQube": [
+      "iqube",
+      "tvs iqube"
+    ],
+    "Bajaj Chetak": [
+      "chetak",
+      "bajaj chetak"
+    ],
+    "Hero Vida": [
+      "hero vida",
+      "vida v1",
+      "vida v2"
+    ]
+  },
+  "keywords": [
+    "best electric scooter India",
+    "electric scooter review",
+    "electric scooter range test",
+    "electric scooter for family",
+    "EV scooter service experience"
+  ],
+  "aspects": {
+    "range": [
+      "range",
+      "km",
+      "mileage",
+      "per charge"
+    ],
+    "charging": [
+      "charging",
+      "charger",
+      "fast charging",
+      "charge",
+      "grid"
+    ],
+    "performance": [
+      "pickup",
+      "acceleration",
+      "top speed",
+      "speed",
+      "power",
+      "hill"
+    ],
+    "service": [
+      "service",
+      "service center",
+      "technician",
+      "warranty",
+      "support",
+      "spare",
+      "spares"
+    ],
+    "price": [
+      "price",
+      "cost",
+      "expensive",
+      "cheap",
+      "subsidy",
+      "emi",
+      "value for money",
+      "on-road"
+    ],
+    "software & app": [
+      "app",
+      "software",
+      "update",
+      "ota",
+      "navigation",
+      "dashboard",
+      "touchscreen"
+    ],
+    "comfort & build": [
+      "seat",
+      "comfort",
+      "build",
+      "quality",
+      "storage",
+      "boot",
+      "suspension",
+      "rattle"
+    ]
+  },
+  "playbook": {
+    "range": "publish real-world range tests by rider weight and city traffic",
+    "charging": "map public chargers on the buyer's commute and show home-charging cost per km",
+    "service": "route these complaints to service ops and publish service-centre turnaround times",
+    "software & app": "ship short explainers on OTA updates and app features, pinned under top reviews",
+    "price": "frame price as cost per km against petrol over three years"
+  },
+  "risk_terms": {
+    "safety": [
+      "battery fire",
+      "battery swelling",
+      "brake failure",
+      "thermal runaway",
+      "caught fire"
+    ],
+    "product_failure": [
+      "motor failure",
+      "bms",
+      "battery dead",
+      "throttle stuck",
+      "software crash"
+    ]
+  },
+  "domain_words": [
+    "scooter",
+    "scooters",
+    "ev",
+    "electric",
+    "battery",
+    "range",
+    "charging",
+    "charger",
+    "ride",
+    "riders"
+  ],
+  "demo_data": null
+}

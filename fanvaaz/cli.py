@@ -1,4 +1,4 @@
-"""Command line: `fanvaaz run`, `fanvaaz serve`, `fanvaaz report`."""
+"""Command line: `fanvaaz run`, `fanvaaz serve`, `fanvaaz report`, `fanvaaz profile`."""
 
 from __future__ import annotations
 
@@ -6,7 +6,8 @@ import argparse
 import json
 import logging
 
-from .config import DEFAULT_KEYWORDS, get_settings
+from . import profile as profile_mod
+from .config import get_settings
 from .pipeline import run
 from .store import Store
 
@@ -18,7 +19,7 @@ def main(argv: list[str] | None = None) -> None:
 
     r = sub.add_parser("run", help="collect, score and store a run")
     r.add_argument("--source", choices=["youtube", "demo"], default="demo")
-    r.add_argument("--keywords", nargs="*", default=DEFAULT_KEYWORDS)
+    r.add_argument("--keywords", nargs="*", default=None, help="defaults to the profile's keywords")
     r.add_argument("--no-llm", action="store_true", help="rules only, even if an LLM is configured")
 
     s = sub.add_parser("serve", help="start the API and dashboard")
@@ -27,9 +28,19 @@ def main(argv: list[str] | None = None) -> None:
 
     sub.add_parser("report", help="print the latest run as JSON (for the two-pager)")
 
+    pr = sub.add_parser("profile", help="see or change what is tracked (brand, rivals, keywords)")
+    pr_sub = pr.add_subparsers(dest="action", required=True)
+    pr_sub.add_parser("list", help="ready-made profiles")
+    pr_sub.add_parser("show", help="print the profile in use as JSON (a starting point for your own)")
+    use = pr_sub.add_parser("use", help="switch to a preset id or a profile JSON file")
+    use.add_argument("ref")
+
     args = p.parse_args(argv)
     if args.cmd == "run":
-        info = run(source=args.source, keywords=args.keywords, use_llm=not args.no_llm)
+        try:
+            info = run(source=args.source, keywords=args.keywords, use_llm=not args.no_llm)
+        except (ValueError, RuntimeError) as e:
+            raise SystemExit(f"fanvaaz run: {e}") from e
         print(info.model_dump_json(indent=2))
     elif args.cmd == "serve":
         import uvicorn
@@ -46,6 +57,24 @@ def main(argv: list[str] | None = None) -> None:
             "insights": st.insights(latest.run_id),
         }
         print(json.dumps(out, indent=2, ensure_ascii=False))
+    elif args.cmd == "profile":
+        st = Store(get_settings().db_path)
+        if args.action == "list":
+            current = profile_mod.sync_from(st).id
+            for p_ in profile_mod.presets().values():
+                mark = "*" if p_.id == current else " "
+                print(f"{mark} {p_.id:<18} {p_.name}: {p_.focus_brand} vs {', '.join(p_.rivals)}")
+        elif args.action == "show":
+            print(profile_mod.sync_from(st).model_dump_json(indent=2))
+        else:
+            try:
+                new = profile_mod.load(args.ref)
+            except ValueError as e:
+                raise SystemExit(str(e)) from e
+            st.save_profile(new.model_dump(), "cli")
+            print(
+                f"Now tracking {new.focus_brand} against {len(new.rivals)} rivals on {len(new.keywords)} keywords."
+            )
 
 
 if __name__ == "__main__":

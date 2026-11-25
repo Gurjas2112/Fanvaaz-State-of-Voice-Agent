@@ -87,3 +87,13 @@ ADMIN = {"email": "admin@fanvaaz.test", "password": "Admin-pass-2026!"}
 def reports_dir() -> Path:
     REPORTS.mkdir(exist_ok=True)
     return REPORTS
+
+
+@pytest.fixture(autouse=True)
+def _default_profile():
+    """Every test starts on the Atomberg preset, whatever the previous test switched to."""
+    from fanvaaz import profile
+
+    profile.reset()
+    yield
+    profile.reset()

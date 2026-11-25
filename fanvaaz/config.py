@@ -1,7 +1,7 @@
-"""Settings, tracked brands and keywords.
+"""Process settings. Secrets come only from the environment (or a git-ignored .env).
 
-Everything tunable lives here so the QA harness can assert on it and the README
-can quote it. Secrets come only from the environment (or a git-ignored .env).
+What is tracked (brands, aliases, keywords, aspects) is not here: it lives in a
+tracking profile (see profile.py), so the same app serves any brand.
 """
 
 from __future__ import annotations
@@ -14,73 +14,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# The brand we report on, and the competitors it is compared against.
-FOCUS_BRAND = "Atomberg"
-
-# Aliases are matched case-insensitively on word boundaries (see brands.py).
-# Model names are only listed when they are unambiguous in fan conversations.
-BRAND_ALIASES: dict[str, list[str]] = {
-    "Atomberg": ["atomberg", "atom berg", "atomburg", "renesa", "efficio", "ameza", "एटमबर्ग"],
-    "Havells": ["havells", "havels", "हैवेल्स"],
-    "Crompton": ["crompton", "energion", "क्रॉम्पटन"],
-    "Orient": ["orient electric", "orient", "aeroquiet"],
-    "Usha": ["usha"],
-    "Bajaj": ["bajaj"],
-    "Polycab": ["polycab"],
-    # "super fan" is left out on purpose: "I'm a super fan of Atomberg" is not a Superfan mention.
-    "Superfan": ["superfan", "versa drives"],
-    "Panasonic": ["panasonic"],
-    "Luminous": ["luminous fan", "luminous fans", "luminous"],
-}
-
-# Keywords searched on YouTube. "smart fan" is the problem statement's keyword;
-# the rest are the adjacent queries Indian buyers actually type.
-DEFAULT_KEYWORDS: list[str] = [
-    "smart fan",
-    "BLDC fan",
-    "best ceiling fan India",
-    "energy saving fan",
-    "ceiling fan with remote",
-    "smart ceiling fan app",
-]
-
-# Aspect vocabulary used to explain *why* sentiment is positive or negative.
-ASPECTS: dict[str, list[str]] = {
-    "energy saving": [
-        "bill",
-        "electricity",
-        "power saving",
-        "energy",
-        "saves",
-        "saving",
-        "watt",
-        "bijli",
-        "inverter",
-    ],
-    "noise": ["noise", "noisy", "silent", "quiet", "quieter", "louder", "sound", "humming", "awaaz"],
-    "remote & app": ["remote", "app", "wifi", "wi-fi", "alexa", "google home", "smart"],
-    "air delivery": ["air", "speed", "breeze", "hawa", "rpm", "cmm"],
-    "service": [
-        "service",
-        "installation",
-        "technician",
-        "warranty",
-        "customer care",
-        "support",
-        "replacement",
-    ],
-    "price": ["price", "cost", "expensive", "cheap", "paisa", "value for money", "costly", "mehenga"],
-    "build & design": ["design", "look", "looks", "build", "quality", "finish", "wobble", "colour", "color"],
-}
-
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="FANVAAZ_", extra="ignore")
 
+    # What to track: a preset id (see fanvaaz/data/profiles) or a path to a profile JSON.
+    # An admin can switch it later in the admin panel; that choice is saved in the database.
+    profile: str = "atomberg-fans"
+
     # Data
     db_path: Path = Field(default=ROOT / "data" / "fanvaaz.db")
     raw_dir: Path = Field(default=ROOT / "data" / "raw")
-    demo_data: Path = Field(default=ROOT / "fanvaaz" / "data" / "demo_raw.json")
+    data_dir: Path = Field(default=ROOT / "fanvaaz" / "data")
 
     # Collection (N is justified in the README: one search page = 50 results)
     youtube_api_key: str | None = None
@@ -102,7 +47,7 @@ class Settings(BaseSettings):
     # Accounts. The first admin is created at startup from these two values.
     admin_email: str | None = None
     admin_password: str | None = None
-    # Comma-separated email domains allowed to sign up (empty = anyone), e.g. "atomberg.com"
+    # Comma-separated email domains allowed to sign up (empty = anyone), e.g. "yourbrand.com"
     signup_domains: str = ""
     session_days: int = Field(default=14, ge=1, le=90)
     cookie_secure: bool = False  # set true behind HTTPS

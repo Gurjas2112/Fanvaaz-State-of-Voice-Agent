@@ -1,7 +1,9 @@
 "use strict";
 // Shared helpers: API calls (with the CSRF header), safe DOM building, the fan chart.
 const HZ = (() => {
-  const FOCUS = "Atomberg";
+  // The brand this workspace reports on; pages set it from the API (any brand, not one company).
+  const state = { focus: "" };
+  const setFocus = (brand) => { state.focus = brand || ""; };
 
   async function api(path, opts = {}) {
     const headers = { "X-Requested-With": "fanvaaz", ...(opts.body ? { "Content-Type": "application/json" } : {}) };
@@ -12,7 +14,7 @@ const HZ = (() => {
     }
     const ct = r.headers.get("content-type") || "";
     const data = r.status === 204 ? null : ct.includes("json") ? await r.json() : await r.text();
-    if (!r.ok) throw new Error((data && data.detail && (typeof data.detail === "string" ? data.detail : data.detail[0]?.msg)) || `Request failed (${r.status})`);
+    if (!r.ok) throw new Error((data && data.detail && (typeof data.detail === "string" ? data.detail : data.detail[0]?.msg?.replace(/^Value error, /, ""))) || `Request failed (${r.status})`);
     return data;
   }
 
@@ -41,7 +43,7 @@ const HZ = (() => {
     toastTimer = setTimeout(() => t.remove(), 2600);
   }
 
-  // The share-of-voice fan: one blade per brand, length by share, Atomberg in teal.
+  // The share-of-voice fan: one blade per brand, length by share, the focus brand in teal.
   const SVGNS = "http://www.w3.org/2000/svg";
   function svg(tag, attrs = {}) {
     const e = document.createElementNS(SVGNS, tag);
@@ -54,7 +56,8 @@ const HZ = (() => {
     return `M ${-root} ${-r0} C ${-width} ${-(r0 + len * 0.3)}, ${-width * 0.45} ${-(r0 + len * 0.92)}, ${width * 0.35} ${-tip}` +
            ` C ${width * 1.15} ${-(r0 + len * 0.78)}, ${width * 0.95} ${-(r0 + len * 0.22)}, ${root} ${-r0} Z`;
   }
-  function fan(container, brands, { labels = true, maxBlades = 8, title = "Share of voice by brand" } = {}) {
+  function fan(container, brands, { labels = true, maxBlades = 8, title = "Share of voice by brand", focus = state.focus } = {}) {
+    const FOCUS = focus;
     const rows = brands.slice(0, maxBlades);
     const max = Math.max(...rows.map((b) => b.sov), 0.0001);
     const R = 150, W = labels ? 300 : 230, H = labels ? 262 : 230;
@@ -100,5 +103,5 @@ const HZ = (() => {
     location.href = "/";
   }
 
-  return { api, el, pct, $, toast, fan, signOut, FOCUS };
+  return { api, el, pct, $, toast, fan, signOut, setFocus, state };
 })();

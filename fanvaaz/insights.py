@@ -1,4 +1,4 @@
-"""Insights and recommendations for Atomberg's content and marketing team.
+"""Insights and recommendations for the focus brand's content and marketing team.
 
 Every insight is computed deterministically and carries its evidence (the exact
 numbers it states). If an LLM is configured it may rewrite the wording, but the
@@ -12,7 +12,7 @@ import json
 import logging
 from collections import Counter, defaultdict
 
-from .config import FOCUS_BRAND
+from . import profile as profile_mod
 from .guardrails import safe_output, ungrounded_numbers
 from .llm import LLM, parse_json
 from .models import KeywordReport, Mention, Video
@@ -20,20 +20,10 @@ from .sov import rank_weight
 
 log = logging.getLogger("fanvaaz.insights")
 
-REWRITE_SYSTEM = """You polish marketing insights for Atomberg's content team.
+REWRITE_SYSTEM = """You polish marketing insights for a brand's content team.
 Rewrite each insight's text to be clear and actionable in at most 2 sentences.
 Use ONLY the numbers given in its evidence. Do not add any new number, brand, or claim.
 Reply with JSON only: {"items": [{"id": "...", "text": "..."}]}"""
-
-ASPECT_PLAYBOOK = {
-    "remote & app": "publish short how-to videos on remote pairing and app setup, and pin them under top reviews",
-    "noise": "lead creatives with silent-operation demos recorded on camera",
-    "energy saving": "show a before/after electricity bill comparison in creator content",
-    "service": "route these complaints to service ops and showcase installation turnaround",
-    "price": "frame price as payback: savings per year against the price premium",
-    "air delivery": "publish air-delivery tests at each speed next to competitor fans",
-    "build & design": "feature finishes and design in Shorts aimed at home-decor audiences",
-}
 
 
 def pct(x: float) -> str:
@@ -51,9 +41,11 @@ def build(
     reports: dict[str, KeywordReport],
     videos: list[Video],
     mentions: list[Mention],
-    focus: str = FOCUS_BRAND,
+    focus: str | None = None,
     risks: list[dict] | None = None,
 ) -> list[dict]:
+    prof = profile_mod.active()
+    focus = focus or prof.focus_brand
     out: list[dict] = []
     overall = reports.get("all")
     if not overall or not overall.brands:
@@ -64,7 +56,7 @@ def build(
     if me:
         rival = leader if leader.brand != focus else (overall.brands[1] if len(overall.brands) > 1 else None)
         text = f"{focus} ranks #{rank} on overall Share of Voice at {pct(me.sov)}"
-        ev: dict = {"atomberg_sov": me.sov, "atomberg_rank": rank}
+        ev: dict = {"focus_sov": me.sov, "focus_rank": rank}
         if rival:
             text += f"; {rival.brand} is {'next' if rank == 1 else 'ahead'} at {pct(rival.sov)}."
             ev |= {"rival_sov": rival.sov}
@@ -196,7 +188,7 @@ def build(
         )
     if neg_aspects:
         a, c = neg_aspects.most_common(1)[0]
-        action = ASPECT_PLAYBOOK.get(a, "address it in content and with the product team")
+        action = prof.playbook.get(a, "address it in content and with the product team")
         out.append(
             {
                 "id": "complaints",

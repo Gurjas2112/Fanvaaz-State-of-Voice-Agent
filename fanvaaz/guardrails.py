@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 
+from . import profile
 from .brands import brands_in
 from .text import contains_pii, redact_pii
 
@@ -37,9 +39,9 @@ INJECTION_PATTERNS = [
 ]
 _INJ = [re.compile(p, re.IGNORECASE | re.DOTALL) for p in INJECTION_PATTERNS]
 
+# Generic share-of-voice vocabulary; the profile adds its brands, category,
+# keywords and aspect words (see _topic_words).
 DOMAIN_WORDS = {
-    "fan",
-    "fans",
     "brand",
     "brands",
     "sov",
@@ -57,14 +59,6 @@ DOMAIN_WORDS = {
     "content",
     "review",
     "reviews",
-    "noise",
-    "remote",
-    "bill",
-    "energy",
-    "bldc",
-    "ceiling",
-    "smart",
-    "app",
     "service",
     "price",
     "competitor",
@@ -89,7 +83,6 @@ DOMAIN_WORDS = {
     "why",
     "insight",
     "insights",
-    "atomberg",
     "lead",
     "leads",
     "rank",
@@ -102,16 +95,12 @@ DOMAIN_WORDS = {
     "like",
     "dislike",
     "quality",
-    "installation",
     "warranty",
     "design",
-    "speed",
-    "air",
-    "saving",
 }
 
 REFUSAL = (
-    "I can only answer questions about fan brands' share of voice and what YouTube viewers say, "
+    "I can only answer questions about the tracked brands' share of voice and what YouTube viewers say, "
     "and I don't follow instructions to change that."
 )
 
@@ -130,9 +119,25 @@ def is_injection(text: str) -> bool:
     return bool(injection_hits(text))
 
 
+# Words in keywords that say nothing about the topic ("best ... in India").
+_FILLER = {"the", "and", "for", "with", "best", "india", "from", "your", "new", "buy", "per", "vs"}
+
+
+@lru_cache(maxsize=1)
+def _topic_words() -> frozenset[str]:
+    p = profile.active()
+    words = set(DOMAIN_WORDS) | set(p.domain_words)
+    for phrase in [p.category, *p.keywords, *p.aspects, *(w for ws in p.aspects.values() for w in ws)]:
+        words |= set(re.findall(r"[a-z]+", phrase.lower()))
+    return frozenset(w for w in words if (len(w) > 2 and w not in _FILLER) or w in DOMAIN_WORDS)
+
+
+profile.on_change(_topic_words.cache_clear)
+
+
 def is_on_topic(text: str) -> bool:
     toks = set(re.findall(r"[a-z]+", text.lower()))
-    return bool(toks & DOMAIN_WORDS) or bool(brands_in(text))
+    return bool(toks & _topic_words()) or bool(brands_in(text))
 
 
 def check_question(question: str) -> Verdict:

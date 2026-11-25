@@ -478,6 +478,71 @@
       ]
     },
     {
+      "name": "Profile - what is tracked",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/profile"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('focus brand is not listed as its own rival', () => pm.expect(pm.response.json().rivals).to.not.include(pm.response.json().focus_brand));",
+              "pm.test('has keywords', () => pm.expect(pm.response.json().keywords.length).to.be.within(1, 10));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - presets listed",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/admin/profile"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('at least two presets', () => pm.expect(pm.response.json().presets.length).to.be.at.least(2));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - invalid custom profile is 422",
+      "request": {
+        "method": "PUT",
+        "url": "{{baseUrl}}/api/v1/admin/profile",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"profile\": {\"id\": \"acme\", \"name\": \"Acme\", \"category\": \"kettles\", \"focus_brand\": \"Nobody\", \"brands\": {\"Acme\": [\"acme\"], \"Boilex\": [\"boilex\"]}, \"keywords\": [\"kettle\"]}}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('422', () => pm.response.to.have.status(422));",
+              "pm.test('says why', () => pm.expect(pm.response.json().detail[0].msg).to.include('must be one of the tracked brands'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "Data - anonymous is 401",
       "request": {
         "method": "GET",

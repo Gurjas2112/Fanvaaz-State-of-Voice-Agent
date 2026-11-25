@@ -1,0 +1,12 @@
+# Schemathesis settings (picked up from the working directory by `schemathesis run`).
+
+# A tracking profile has cross-field rules JSON Schema cannot express (the focus
+# brand must be one of the brands, an alias cannot belong to two brands, demo data
+# must be bundled). A schema-valid body that breaks one is correctly refused with
+# 422 and a readable reason; everywhere else 422 for valid data stays a failure.
+[[operations]]
+include-path = "/api/v1/admin/profile"
+include-method = "PUT"
+
+[operations.checks.positive_data_acceptance]
+expected-statuses = ["200", "401", "403", "422"]

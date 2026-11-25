@@ -6,5 +6,5 @@ const EXAMPLE = [
   { brand: "Superfan", sov: 0.06 }, { brand: "Polycab", sov: 0.04 },
 ];
 const fig = document.getElementById("hero-fan");
-HZ.fan(fig, EXAMPLE, { labels: true, title: "Example share of voice fan" });
-fig.append(HZ.el("figcaption", { class: "example" }, "Each blade is a brand, sized by its share of voice. Example data."));
+HZ.fan(fig, EXAMPLE, { labels: true, title: "Example share of voice fan", focus: "Atomberg" });
+fig.append(HZ.el("figcaption", { class: "example" }, "Each blade is a brand, sized by its share of voice. Example: Atomberg among ceiling-fan brands."));

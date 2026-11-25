@@ -6,7 +6,6 @@ reply inbox. Everything is computed from stored runs; nothing is generated.
 
 from __future__ import annotations
 
-from .config import FOCUS_BRAND
 from .store import Store
 
 OPEN = {"open", None}
@@ -21,11 +20,15 @@ def _brand_row(report, brand):
     return None, None
 
 
-def build_brief(store: Store, focus: str = FOCUS_BRAND) -> dict:
+def build_brief(store: Store, focus: str | None = None) -> dict:
     run = store.latest_run()
     if run is None:
         return {"has_data": False}
+    focus = focus or run.focus_brand
+    # Only compare with a run that tracked the same focus brand.
     prev = store.previous_run(run.run_id)
+    if prev and prev.focus_brand != focus:
+        prev = None
     now_rep = store.report(run.run_id, "all")
     prev_rep = store.report(prev.run_id, "all") if prev else None
     rank, me = _brand_row(now_rep, focus)

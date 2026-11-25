@@ -8,7 +8,7 @@
   async function loadRuns() {
     const runs = await api("/api/v1/admin/runs");
     $("runs").replaceChildren(...runs.map((r) => el("tr", { "data-testid": "run-row" },
-      el("td", {}, fmt(r.created_at)), el("td", {}, r.source === "youtube" ? "YouTube" : "Demo data"),
+      el("td", {}, fmt(r.created_at)), el("td", {}, r.focus_brand), el("td", {}, r.source === "youtube" ? "YouTube" : "Demo data"),
       el("td", { class: "num" }, String(r.videos)), el("td", { class: "num" }, r.comments.toLocaleString("en-IN")),
       el("td", { class: "num" }, String(r.quota_units_used)))));
   }
@@ -28,6 +28,49 @@
       btn.disabled = false;
       btn.textContent = label;
     }
+  }
+
+  function showProfile(data) {
+    const p = data.active;
+    $("track-current").replaceChildren(...[
+      ["Setup", p.name],
+      ["Your brand", p.focus_brand],
+      ["Rivals", Object.keys(p.brands).filter((b) => b !== p.focus_brand).join(", ")],
+      ["Search terms", p.keywords.join(", ")],
+      ["Last changed", data.updated_by ? `${fmt(data.updated_at)} by ${data.updated_by}` : "Default setup"],
+    ].flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)]));
+    $("preset").replaceChildren(...data.presets.map((x) => el("option", { value: x.id }, `${x.name} (${x.focus_brand} vs ${x.rivals.length} rivals)`)));
+    if (data.presets.some((x) => x.id === p.id)) $("preset").value = p.id;
+    $("profile-json").value = JSON.stringify(p, null, 2);
+    const units = 151 * p.keywords.length;
+    $("collect-note").textContent = `A YouTube collection reads ${p.keywords.length} search terms, 50 videos each, and uses about ${units.toLocaleString("en-IN")} of the 10,000 free daily API units.`
+      + (p.demo_data ? "" : " This setup has no demo data, so collect from YouTube.");
+    $("run-demo").disabled = !p.demo_data;
+  }
+
+  async function loadProfile() {
+    showProfile(await api("/api/v1/admin/profile"));
+  }
+
+  async function saveProfile(body, done) {
+    $("profile-error").textContent = "";
+    try {
+      showProfile(await api("/api/v1/admin/profile", { method: "PUT", body: JSON.stringify(body) }));
+      toast(done);
+    } catch (e) {
+      $("profile-error").textContent = e.message;
+    }
+  }
+
+  function saveCustom() {
+    let profile;
+    try {
+      profile = JSON.parse($("profile-json").value);
+    } catch {
+      $("profile-error").textContent = "The profile is not valid JSON. Check for a missing comma or quote.";
+      return;
+    }
+    saveProfile({ profile }, `Now tracking ${profile.focus_brand}`);
   }
 
   function userRow(u) {
@@ -76,16 +119,19 @@
     $("system").replaceChildren(...rows.flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)]));
     const yt = $("run-youtube");
     yt.disabled = !s.youtube_key_set;
-    if (!s.youtube_key_set) $("collect-note").textContent += " Add a YouTube API key to enable live collection.";
+    $("yt-hint").hidden = s.youtube_key_set;
   }
 
   async function init() {
     $("signout").addEventListener("click", HZ.signOut);
     $("run-youtube").addEventListener("click", (e) => startRun("youtube", e.currentTarget));
     $("run-demo").addEventListener("click", (e) => startRun("demo", e.currentTarget));
+    $("use-preset").addEventListener("click", () => saveProfile({ preset: $("preset").value }, "Setup switched. Collect data to see it."));
+    $("save-profile").addEventListener("click", saveCustom);
     me = await api("/api/v1/auth/me");
     $("user-name").textContent = `Signed in as ${me.name}`;
     await Promise.all([loadRuns(), loadUsers(), loadSystem()]);
+    await loadProfile();
     document.body.dataset.ready = "true";
   }
   init();

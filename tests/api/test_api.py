@@ -125,3 +125,65 @@ def test_csv_exports(client, table, header):
 
 def test_unknown_export_is_422(client):
     assert client.get("/api/v1/export/users.csv").status_code == 422
+
+
+# ---- tracking profile ---------------------------------------------------------
+def test_profile_is_readable_by_any_signed_in_user(client):
+    r = client.get("/api/v1/profile")
+    assert r.status_code == 200
+    assert r.json()["focus_brand"] == "Atomberg"
+    assert "Havells" in r.json()["rivals"]
+
+
+def test_admin_can_switch_profile_and_past_runs_keep_their_brands(client):
+    before = client.get("/api/v1/sov").json()
+    try:
+        r = client.put("/api/v1/admin/profile", json={"preset": "ather-scooters"})
+        assert r.status_code == 200, r.text
+        assert r.json()["active"]["focus_brand"] == "Ather"
+        assert client.get("/api/v1/profile").json()["focus_brand"] == "Ather"
+        # The stored run still reports on the brand it tracked.
+        after = client.get("/api/v1/sov").json()
+        assert after["focus_brand"] == "Atomberg"
+        assert after["report"] == before["report"]
+        # No synthetic scooter data ships, so a demo run explains what to do instead.
+        r = client.post("/api/v1/runs", json={"source": "demo"})
+        assert r.status_code == 400
+        assert "collect live YouTube data" in r.json()["detail"]
+    finally:
+        assert client.put("/api/v1/admin/profile", json={"preset": "atomberg-fans"}).status_code == 200
+
+
+def test_custom_profile_is_validated_with_a_readable_error(client):
+    bad = {
+        "id": "acme",
+        "name": "Acme",
+        "category": "kettles",
+        "focus_brand": "Nobody",
+        "brands": {"Acme": ["acme"], "Boilex": ["boilex"]},
+        "keywords": ["kettle"],
+    }
+    r = client.put("/api/v1/admin/profile", json={"profile": bad})
+    assert r.status_code == 422
+    assert "must be one of the tracked brands" in r.json()["detail"][0]["msg"]
+    ok = {**bad, "focus_brand": "Acme"}
+    r = client.put("/api/v1/admin/profile", json={"preset": "atomberg-fans", "profile": ok})
+    assert r.status_code == 422 and "not both" in r.json()["detail"][0]["msg"]
+    assert client.put("/api/v1/admin/profile", json={}).status_code == 422
+    assert client.put("/api/v1/admin/profile", json={"preset": "nope"}).status_code == 422
+    for demo in ("../../etc/passwd", "a" * 5000, "atomberg-fans.json/.."):
+        r = client.put("/api/v1/admin/profile", json={"profile": {**ok, "demo_data": demo}})
+        assert r.status_code == 422, demo  # found by Schemathesis: a 5,000-char name was a 500
+    assert client.get("/api/v1/profile").json()["focus_brand"] == "Atomberg"
+
+
+def test_profile_admin_endpoints_need_an_admin(anon):
+    assert anon.get("/api/v1/admin/profile").status_code == 401
+    assert anon.put("/api/v1/admin/profile", json={"preset": "ather-scooters"}).status_code == 401
+
+
+def test_405_lists_every_method_the_path_supports(client):
+    """Found by Schemathesis (ST205): GET and PUT are separate routes on one path."""
+    r = client.delete("/api/v1/admin/profile")
+    assert r.status_code == 405
+    assert r.headers["allow"] == "GET, PUT"

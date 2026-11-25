@@ -7,9 +7,10 @@ import uuid
 from datetime import UTC, datetime
 
 from . import insights as insights_mod
+from . import profile as profile_mod
 from . import risk as risk_mod
 from .collector import YouTubeCollector, load_demo
-from .config import DEFAULT_KEYWORDS, Settings, get_settings
+from .config import Settings, get_settings
 from .extract import extract_all
 from .llm import LLM, get_llm
 from .models import RunInfo
@@ -29,7 +30,8 @@ def run(
 ) -> RunInfo:
     s = settings or get_settings()
     store = store or Store(s.db_path)
-    keywords = keywords or DEFAULT_KEYWORDS
+    prof = profile_mod.sync_from(store)
+    keywords = keywords or prof.keywords
     llm = llm if llm is not None else (get_llm(s) if use_llm else None)
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%S") + "-" + uuid.uuid4().hex[:6]
 
@@ -40,7 +42,11 @@ def run(
         units = col.units
         src = "youtube"
     elif source == "demo":
-        videos = [v for v in load_demo(s.demo_data) if v.keyword in keywords]
+        if not prof.demo_data:
+            raise ValueError(
+                f"the '{prof.name}' profile has no demo dataset; collect live YouTube data instead"
+            )
+        videos = [v for v in load_demo(s.data_dir / prof.demo_data) if v.keyword in keywords]
         src = "synthetic-demo"
     else:
         raise ValueError("source must be 'youtube' or 'demo'")
@@ -48,7 +54,7 @@ def run(
     mentions = extract_all(videos, llm=llm)
     reports = by_keyword(videos, mentions, s)
     risks = risk_mod.flag_comments(videos, mentions)
-    ins = insights_mod.build(reports, videos, mentions, risks=risks)
+    ins = insights_mod.build(reports, videos, mentions, focus=prof.focus_brand, risks=risks)
     if llm is not None:
         ins = insights_mod.rewrite_with_llm(ins, llm)
 
@@ -60,6 +66,9 @@ def run(
         videos=len(videos),
         comments=sum(len(v.comments) for v in videos),
         quota_units_used=units,
+        profile_id=prof.id,
+        focus_brand=prof.focus_brand,
+        brands=list(prof.brands),
     )
     store.save_run(info, videos, mentions, reports, ins, risks)
     log.info(

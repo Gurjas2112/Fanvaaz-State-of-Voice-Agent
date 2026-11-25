@@ -19,14 +19,16 @@ from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from . import __version__
+from . import profile as profile_mod
 from .ask import Answerer
 from .auth import COOKIE, CSRF_HEADER, CSRF_VALUE, EMAIL_PATTERN, Accounts, AuthError, User
 from .brief import build_brief
-from .config import FOCUS_BRAND, get_settings
+from .config import get_settings
 from .llm import get_llm
 from .models import KeywordReport, RunInfo
 from .pipeline import run as run_pipeline
@@ -57,6 +59,7 @@ async def lifespan(app: FastAPI):
     s = get_settings()
     store = app.dependency_overrides.get(get_store, get_store)()
     get_accounts(store).ensure_admin()
+    profile_mod.sync_from(store)
     task = None
     if s.daily_run_at:
         from .scheduler import daily_loop
@@ -70,7 +73,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Fanvaaz API",
     version=__version__,
-    description="Atomberg's daily YouTube Share of Voice, risk inbox and guarded Q&A.",
+    description="Daily YouTube Share of Voice for any brand: risk inbox and guarded Q&A.",
     lifespan=lifespan,
 )
 
@@ -81,6 +84,14 @@ CSP = (
 )
 
 
+def _allowed_methods(path: str) -> list[str]:
+    methods: set[str] = set()
+    for route in app.routes:
+        if isinstance(route, APIRoute) and route.path_regex.match(path):
+            methods |= route.methods
+    return sorted(methods)
+
+
 @app.middleware("http")
 async def headers(request: Request, call_next):
     t0 = time.perf_counter()
@@ -89,6 +100,10 @@ async def headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "same-origin"
     response.headers["X-Frame-Options"] = "DENY"
+    if response.status_code == 405:
+        # Starlette lists only the first matching route's methods; GET and PUT on
+        # /api/v1/admin/profile are two routes, so build Allow from all of them.
+        response.headers["Allow"] = ", ".join(_allowed_methods(request.url.path))
     if not request.url.path.startswith(("/docs", "/redoc", "/openapi")):
         response.headers["Content-Security-Policy"] = CSP
     return response
@@ -217,7 +232,9 @@ class SovResponse(BaseModel):
 
 
 class AskRequest(StrictIn):
-    question: str = Field(min_length=1, max_length=1000, examples=["Why do people complain about Atomberg?"])
+    question: str = Field(
+        min_length=1, max_length=1000, examples=["Why do people complain about the remote?"]
+    )
 
 
 class Source(BaseModel):
@@ -238,6 +255,49 @@ class AskResponse(BaseModel):
 class RunRequest(StrictIn):
     source: Literal["youtube", "demo"] = "demo"
     keywords: list[str] | None = Field(default=None, max_length=10)
+
+
+class ProfileSummary(BaseModel):
+    id: str
+    name: str
+    category: str
+    focus_brand: str
+    rivals: list[str]
+    keywords: list[str]
+
+
+PresetId = Literal[tuple(profile_mod.presets())]  # type: ignore[valid-type]
+
+
+class ProfilePut(StrictIn):
+    """Either switch to a preset, or save a full custom profile."""
+
+    preset: PresetId | None = None
+    profile: profile_mod.Profile | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> ProfilePut:
+        if (self.preset is None) == (self.profile is None):
+            raise ValueError("send either a preset id or a full profile, not both")
+        return self
+
+
+class ProfileAdmin(BaseModel):
+    active: profile_mod.Profile
+    updated_by: str | None
+    updated_at: str | None
+    presets: list[ProfileSummary]
+
+
+def _summary(p: profile_mod.Profile) -> ProfileSummary:
+    return ProfileSummary(
+        id=p.id,
+        name=p.name,
+        category=p.category,
+        focus_brand=p.focus_brand,
+        rivals=p.rivals,
+        keywords=p.keywords,
+    )
 
 
 class RiskFlag(BaseModel):
@@ -380,7 +440,7 @@ def sov(
     rep = store.report(info.run_id, keyword)
     if rep is None:
         raise HTTPException(404, f"Unknown keyword '{keyword}'. See /api/v1/keywords.")
-    return SovResponse(run=info, focus_brand=FOCUS_BRAND, report=rep)
+    return SovResponse(run=info, focus_brand=info.focus_brand, report=rep)
 
 
 @app.get("/api/v1/insights", tags=["sov"], responses=NO_DATA)
@@ -577,10 +637,39 @@ def create_run(
 ) -> RunInfo:
     try:
         info = run_pipeline(source=body.source, keywords=body.keywords, store=store)
-    except RuntimeError as e:
+    except (RuntimeError, ValueError) as e:
         raise HTTPException(400, str(e)) from e
     _answerers.clear()
     return info
+
+
+@app.get("/api/v1/profile", response_model=ProfileSummary, tags=["profile"], responses=AUTH)
+def get_profile(_: User = Depends(current_user)) -> ProfileSummary:
+    """What is being tracked now. A change takes effect from the next run."""
+    return _summary(profile_mod.active())
+
+
+@app.get("/api/v1/admin/profile", response_model=ProfileAdmin, tags=["admin"], responses=ADMIN)
+def admin_profile(store: Store = Depends(get_store), _: User = Depends(require_admin)) -> ProfileAdmin:
+    saved = store.saved_profile() or {}
+    return ProfileAdmin(
+        active=profile_mod.active(),
+        updated_by=saved.get("updated_by"),
+        updated_at=saved.get("updated_at"),
+        presets=[_summary(p) for p in profile_mod.presets().values()],
+    )
+
+
+@app.put("/api/v1/admin/profile", response_model=ProfileAdmin, tags=["admin"], responses={**ADMIN, **WRITE})
+def admin_set_profile(
+    body: ProfilePut, store: Store = Depends(get_store), user: User = Depends(require_admin)
+) -> ProfileAdmin:
+    """Switch to a preset or save a custom profile. Past runs keep the brands they tracked."""
+    new = profile_mod.load(body.preset) if body.preset is not None else body.profile
+    store.save_profile(new.model_dump(), user.email)
+    profile_mod.set_active(new)
+    _answerers.clear()
+    return admin_profile(store, user)
 
 
 # ---- pages -------------------------------------------------------------------
