@@ -24,7 +24,7 @@
 | Product | Landing, sign-up/sign-in with roles, daily brief with change since the last run, reply inbox, admin panel; FastAPI (OpenAPI), SQLite, Docker |
 | Quality | pytest + Hypothesis, golden sets, DeepEval, Ragas, promptfoo, Postman/Newman, Schemathesis, Playwright, Appium, k6, GitHub Actions |
 
-**Links:** code https://github.com/Gurjas2112/Hawaaz · live demo <add your deployed URL>
+**Links:** code https://github.com/Gurjas2112/Hawaaz-SoV-Agent · live demo <add your deployed URL>
 
 **Measured quality**
 

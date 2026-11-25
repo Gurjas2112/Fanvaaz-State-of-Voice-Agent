@@ -18,7 +18,7 @@ from hawaaz.store import Store
 ROOT = Path(__file__).resolve().parent.parent
 REPORTS = ROOT / "reports"
 OUT = ROOT / "docs" / "TWO_PAGER.md"
-REPO_URL = "https://github.com/Gurjas2112/Hawaaz"  # update after pushing
+REPO_URL = "https://github.com/Gurjas2112/Hawaaz-SoV-Agent"  # update after pushing
 DEMO_URL = "<add your deployed URL>"
 
 

@@ -26,6 +26,7 @@ Every stage is guarded and gated in CI: golden-set accuracy, metamorphic propert
 ## Quick start
 
 ```bash
+git clone https://github.com/Gurjas2112/Hawaaz-SoV-Agent.git && cd Hawaaz-SoV-Agent
 pip install -e ".[dev]"
 export HAWAAZ_ADMIN_EMAIL=you@example.com HAWAAZ_ADMIN_PASSWORD='choose-a-long-passphrase'
 hawaaz run --source demo           # seed from the bundled synthetic dataset (no keys, no network)
