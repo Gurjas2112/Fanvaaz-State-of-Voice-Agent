@@ -1,0 +1,10 @@
+.git
+.env
+data
+reports
+tests
+node_modules
+docs
+**/__pycache__
+.pytest_cache
+.hypothesis

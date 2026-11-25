@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "atompulse"
+version = "1.0.0"
+description = "Share-of-Voice agent for Atomberg on YouTube, with an LLM quality harness"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Gurjas Singh Gandhi" }]
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "httpx>=0.27",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "hypothesis>=6.100",
+  "ruff>=0.5",
+  "pytest-playwright>=0.5",
+]
+mobile = ["Appium-Python-Client>=4"]
+llm-evals = ["deepeval>=3.0", "ragas>=0.2", "langchain-openai>=0.2", "datasets>=2.19"]
+fuzz = ["schemathesis>=4"]
+
+[project.scripts]
+atompulse = "atompulse.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["atompulse*"]
+
+[tool.setuptools.package-data]
+atompulse = ["static/*", "data/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+  "golden: accuracy gates against the hand-labelled golden set",
+  "safety: guardrail and red-team gates",
+  "llm: needs a real LLM key (DeepEval / Ragas); skipped otherwise",
+  "e2e: Playwright browser tests against a live server",
+  "mobile: Appium tests on an Android emulator; needs APPIUM_URL",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Header"]
