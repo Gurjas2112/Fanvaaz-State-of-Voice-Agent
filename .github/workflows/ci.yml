@@ -58,6 +58,8 @@ jobs:
     needs: offline-gates
     env:
       FANVAAZ_DB_PATH: ${{ github.workspace }}/data/ci.db
+      # k6 sends ~55 req/s from one service account; the per-user /ask limit (20/min) would answer 429.
+      FANVAAZ_ASK_RATE_PER_MIN: "600"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -136,7 +138,7 @@ jobs:
           disable-animations: true
           script: |
             nohup appium --allow-insecure chromedriver_autodownload > appium.log 2>&1 &
-            sleep 10
+            for i in $(seq 1 60); do curl -sf http://127.0.0.1:4723/status >/dev/null && break; sleep 2; done
             APPIUM_URL=http://127.0.0.1:4723 APP_URL=http://10.0.2.2:8000 pytest -m mobile -v
       - uses: actions/upload-artifact@v4
         if: always()
