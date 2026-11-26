@@ -519,6 +519,34 @@ def me(user: User = Depends(current_user)) -> dict:
     return user.public()
 
 
+class PasswordChangeIn(StrictIn):
+    current_password: str = Field(min_length=1, max_length=200)
+    new_password: str = Field(min_length=10, max_length=200)
+
+
+@app.post(
+    "/api/v1/auth/password",
+    response_model=UserOut,
+    tags=["auth"],
+    responses={**AUTH, **WRITE, 429: {"model": ErrorBody, "description": "Too many attempts"}},
+)
+def change_password(
+    body: PasswordChangeIn,
+    request: Request,
+    response: Response,
+    store: Store = Depends(get_store),
+    accounts: Accounts = Depends(get_accounts),
+    user: User = Depends(current_user),
+) -> dict:
+    """Change your own password. Every other session (other browsers, the app) is signed out."""
+    if request.headers.get("authorization") or not request.cookies.get(COOKIE):
+        raise HTTPException(400, "Sign in with a password to change it (service tokens have none).")
+    fresh, token = accounts.change_password(user, body.current_password, body.new_password)
+    _set_session(response, token)
+    audit(store, user.email, "user.password_changed", user.email)
+    return fresh.public()
+
+
 # ---- ops ---------------------------------------------------------------------
 @app.get("/health", response_model=Health, tags=["ops"])
 def health(store: Store = Depends(get_store)) -> Health:
@@ -1095,6 +1123,11 @@ def signup_page(user: User | None = Depends(optional_user)):
 @app.get("/app", include_in_schema=False)
 def app_page(user: User | None = Depends(optional_user)):
     return _page("app.html") if user else RedirectResponse("/login?next=/app", 303)
+
+
+@app.get("/account", include_in_schema=False)
+def account_page(user: User | None = Depends(optional_user)):
+    return _page("account.html") if user else RedirectResponse("/login?next=/account", 303)
 
 
 @app.get("/admin", include_in_schema=False)

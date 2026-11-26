@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your account · Fanvaaz</title>
+  <link rel="preload" href="/static/fonts/bricolage-grotesque-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#14213d">
+  <link rel="icon" href="/static/icons/icon-192.png" sizes="192x192">
+  <link rel="stylesheet" href="/static/hz.css">
+</head>
+<body>
+  <div class="auth">
+    <aside class="side">
+      <a class="logo" href="/app" data-mark>Fanvaaz</a>
+      <figure class="fan" id="side-fan"></figure>
+      <p>Changing your password signs you out everywhere else, including the Android app.</p>
+    </aside>
+    <main>
+      <form id="password-form" novalidate data-testid="password-form">
+        <h1>Change password</h1>
+        <p class="switch" id="account-email" data-testid="account-email"></p>
+        <div class="field">
+          <label for="current_password">Current password</label>
+          <input id="current_password" name="current_password" type="password" autocomplete="current-password" required data-testid="current-password">
+        </div>
+        <div class="field">
+          <label for="new_password">New password (at least 10 characters)</label>
+          <input id="new_password" name="new_password" type="password" autocomplete="new-password" minlength="10" required data-testid="new-password">
+        </div>
+        <div class="field">
+          <label for="confirm_password">Repeat the new password</label>
+          <input id="confirm_password" name="confirm_password" type="password" autocomplete="new-password" required data-testid="confirm-password">
+        </div>
+        <p class="error" id="form-error" role="alert" data-testid="password-error"></p>
+        <p class="switch" id="form-ok" role="status" data-testid="password-ok"></p>
+        <button class="btn" type="submit" data-testid="password-submit">Change password</button>
+        <p class="switch"><a href="/app">Back to Fanvaaz</a></p>
+      </form>
+    </main>
+  </div>
+  <script src="/static/hz.js"></script>
+  <script src="/static/auth.js"></script>
+</body>
+</html>

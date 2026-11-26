@@ -228,6 +228,21 @@ class Accounts:
                 c.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
         return self.get(user_id)  # type: ignore[return-value]
 
+    def change_password(self, user: User, current: str, new: str) -> tuple[User, str]:
+        """Self-service change: needs the current password; signs out every other session."""
+        if self._throttled(user.email):
+            raise AuthError(429, "Too many attempts. Wait 15 minutes.")
+        with self.store._conn() as c:
+            row = c.execute("SELECT password_hash FROM users WHERE id=?", (user.id,)).fetchone()
+        if not (row and verify_password(current, row[0])):
+            with self._lock:
+                self._fails.setdefault(user.email, []).append(time.monotonic())
+            raise AuthError(401, "The current password is incorrect.")
+        if new == current:
+            raise AuthError(400, "Choose a password different from the current one.")
+        self.update_user(user.id, password=new)  # validates, re-hashes, ends all sessions
+        return self.open_session(user)  # ...then a fresh session for this browser
+
     # ---- sessions ----------------------------------------------------------
     def _throttled(self, email: str) -> bool:
         cutoff = time.monotonic() - 900

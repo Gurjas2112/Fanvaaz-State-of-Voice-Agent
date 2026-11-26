@@ -205,7 +205,9 @@ def to_mp4(webm: Path, mp4: Path) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--url", default=os.getenv("APP_URL", "http://127.0.0.1:8000"))
+    p.add_argument(
+        "--url", default=os.getenv("CAPTURE_URL") or os.getenv("APP_URL") or "http://127.0.0.1:8000"
+    )
     p.add_argument("--collect", action="store_true", help="also run a live collection from the admin page")
     args = p.parse_args()
     url = args.url.rstrip("/")

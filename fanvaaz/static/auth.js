@@ -33,4 +33,35 @@
   }
   wire("login-form", "/api/v1/auth/login", ["email", "password"]);
   wire("signup-form", "/api/v1/auth/signup", ["name", "email", "password"]);
+
+  const pw = document.getElementById("password-form");
+  if (pw) {
+    const err = document.getElementById("form-error");
+    const ok = document.getElementById("form-ok");
+    HZ.api("/api/v1/auth/me").then((u) => {
+      document.getElementById("account-email").textContent = `Signed in as ${u.email}`;
+    });
+    pw.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      err.textContent = ok.textContent = "";
+      const cur = pw.elements.current_password.value;
+      const nw = pw.elements.new_password.value;
+      if (!cur) return (err.textContent = "Enter your current password.");
+      if (nw.length < 10) return (err.textContent = "Use at least 10 characters for the new password.");
+      if (nw !== pw.elements.confirm_password.value) return (err.textContent = "The new passwords do not match.");
+      const btn = pw.querySelector("button[type=submit]");
+      btn.disabled = true;
+      try {
+        await HZ.api("/api/v1/auth/password", {
+          method: "POST",
+          body: JSON.stringify({ current_password: cur, new_password: nw }),
+        });
+        pw.reset();
+        ok.textContent = "Password changed. Other sessions were signed out.";
+      } catch (ex) {
+        err.textContent = ex.message;
+      }
+      btn.disabled = false;
+    });
+  }
 })();

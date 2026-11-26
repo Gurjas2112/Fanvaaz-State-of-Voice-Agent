@@ -275,3 +275,55 @@ def test_password_reset_works_for_accounts_made_under_older_rules(client, seeded
     assert (
         client.patch(f"/api/v1/admin/users/{uid}", json={"password": "a-fresh-password-9"}).status_code == 200
     )
+
+
+def test_change_own_password_signs_out_other_sessions(anon):
+    from fastapi.testclient import TestClient
+
+    from fanvaaz.api import app
+
+    email = new_email()
+    signup(anon, email)
+    with TestClient(app, headers={"X-Requested-With": "fanvaaz"}) as other:  # e.g. the Android app
+        other.post("/api/v1/auth/login", json={"email": email, "password": "correct-horse-42"})
+        assert other.get("/api/v1/auth/me").status_code == 200
+
+        wrong = anon.post(
+            "/api/v1/auth/password", json={"current_password": "nope", "new_password": "brand-new-pass-77"}
+        )
+        assert wrong.status_code == 401
+        same = anon.post(
+            "/api/v1/auth/password",
+            json={"current_password": "correct-horse-42", "new_password": "correct-horse-42"},
+        )
+        assert same.status_code == 400
+        r = anon.post(
+            "/api/v1/auth/password",
+            json={"current_password": "correct-horse-42", "new_password": "brand-new-pass-77"},
+        )
+        assert r.status_code == 200 and COOKIE in r.headers["set-cookie"]
+        assert anon.get("/api/v1/auth/me").status_code == 200  # this browser keeps a fresh session
+        assert other.get("/api/v1/auth/me").status_code == 401  # every other session is gone
+
+    anon.post("/api/v1/auth/logout")
+    old = anon.post("/api/v1/auth/login", json={"email": email, "password": "correct-horse-42"})
+    assert old.status_code == 401
+    assert (
+        anon.post("/api/v1/auth/login", json={"email": email, "password": "brand-new-pass-77"}).status_code
+        == 200
+    )
+
+
+def test_password_change_needs_a_cookie_session_and_csrf(anon, client):
+    body = {"current_password": "x", "new_password": "brand-new-pass-77"}
+    assert client.post("/api/v1/auth/password", json=body).status_code == 400  # service token: no password
+    email = new_email()
+    signup(anon, email)
+    from fastapi.testclient import TestClient
+
+    from fanvaaz.api import app
+
+    with TestClient(app) as no_header:
+        no_header.cookies.update(anon.cookies)
+        assert no_header.post("/api/v1/auth/password", json=body).status_code == 403
+    assert anon.get("/account").status_code == 200
