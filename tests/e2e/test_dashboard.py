@@ -273,6 +273,31 @@ def test_admin_switches_what_is_tracked_and_back(page, server_url):
         expect(current).to_contain_text("Samsung")
 
 
+def test_two_products_side_by_side_with_the_switcher(page, server_url):
+    sign_in(page, server_url, *ADMIN, next_path="/admin")
+    page.get_by_test_id("preset").select_option("ev-scooters-india")
+    page.get_by_test_id("add-preset").click()
+    expect(page.get_by_role("status")).to_contain_text("Product added")
+    rows = page.get_by_test_id("profile-row")
+    expect(rows).to_have_count(2)
+    expect(page.get_by_test_id("editing-name")).to_contain_text("Electric scooters")
+    try:
+        # the dashboard follows the switcher: the new product has no collection yet
+        page.goto(server_url + "/app")
+        switch = page.get_by_test_id("profile-switch")
+        expect(switch).to_be_visible()
+        expect(page.get_by_test_id("ask-input")).to_have_attribute("placeholder", re.compile("Ather"))
+        switch.select_option("smartphones-india")
+        page.wait_for_load_state()
+        expect(page.get_by_test_id("ask-input")).to_have_attribute("placeholder", re.compile("OnePlus"))
+        expect(page.locator("body")).to_have_attribute("data-ready", "true")
+    finally:
+        page.context.clear_cookies(name="fz_profile")
+        page.request.delete(
+            server_url + "/api/v1/admin/profiles/ev-scooters-india", headers={"X-Requested-With": "fanvaaz"}
+        )
+
+
 def test_pwa_manifest_and_service_worker(page, server_url):
     r = page.request.get(server_url + "/manifest.webmanifest")
     assert r.ok and r.json()["start_url"] == "/app" and r.json()["display"] == "standalone"

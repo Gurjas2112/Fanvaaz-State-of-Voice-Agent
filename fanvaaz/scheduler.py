@@ -32,7 +32,7 @@ def claim(store: Store, day: str) -> bool:
 
 
 async def daily_loop(settings: Settings, store: Store) -> None:
-    from .pipeline import run
+    from .pipeline import run_all
 
     tz = ZoneInfo(settings.timezone)
     if not settings.youtube_api_key:
@@ -44,9 +44,7 @@ async def daily_loop(settings: Settings, store: Store) -> None:
         await asyncio.sleep((fire - now).total_seconds())
         if claim(store, fire.date().isoformat()):
             try:
-                info = await asyncio.to_thread(
-                    run, source="youtube", settings=settings, store=store, actor="scheduler"
-                )
-                log.info("daily run %s done", info.run_id)
+                results = await asyncio.to_thread(run_all, store, "scheduler", settings)
+                log.info("daily runs done: %s", [(r["profile"], r["ok"]) for r in results])
             except Exception:  # noqa: BLE001 - keep the loop alive; the failure is logged
                 log.exception("daily run failed")

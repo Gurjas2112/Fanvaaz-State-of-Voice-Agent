@@ -253,6 +253,28 @@ CREATE TABLE IF NOT EXISTS ask_feedback (
 );
 """,
     ),
+    Migration(
+        5,
+        "Several tracking profiles per workspace; the single saved profile becomes the default",
+        sqlite="""
+CREATE TABLE IF NOT EXISTS profiles (
+  id TEXT PRIMARY KEY, body TEXT NOT NULL, updated_by TEXT NOT NULL, updated_at TEXT NOT NULL,
+  is_default INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO profiles (id, body, updated_by, updated_at, is_default)
+  SELECT json_extract(body, '$.id'), body, updated_by, updated_at, 1 FROM app_profile WHERE id = 1
+  ON CONFLICT (id) DO NOTHING;
+""",
+        postgres="""
+CREATE TABLE IF NOT EXISTS profiles (
+  id TEXT PRIMARY KEY, body TEXT NOT NULL, updated_by TEXT NOT NULL, updated_at TEXT NOT NULL,
+  is_default INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO profiles (id, body, updated_by, updated_at, is_default)
+  SELECT body::json->>'id', body, updated_by, updated_at, 1 FROM app_profile WHERE id = 1
+  ON CONFLICT (id) DO NOTHING;
+""",
+    ),
 ]
 
 

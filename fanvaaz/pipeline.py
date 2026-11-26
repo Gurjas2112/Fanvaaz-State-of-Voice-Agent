@@ -47,6 +47,7 @@ def run(
     actor: str = "system",
     progress=None,
     run_id: str | None = None,
+    profile: profile_mod.Profile | None = None,
 ) -> RunInfo:
     """source="youtube" collects live; source="replay" re-scores a recorded real snapshot."""
     s = settings or get_settings()
@@ -58,7 +59,8 @@ def run(
         raise ValueError("replay needs a snapshot file")
     if source == "youtube" and not s.youtube_api_key:
         raise RuntimeError("Set FANVAAZ_YOUTUBE_API_KEY to collect live data")
-    prof = profile_mod.sync_from(store)  # raises NoProfileError before onboarding
+    # The profile to collect: given, else this request's (set by the API middleware), else the default.
+    prof = profile or profile_mod.scoped() or profile_mod.sync_from(store)  # NoProfileError before onboarding
     llm = llm if llm is not None else (get_llm(s) if use_llm else None)
     run_id = run_id or new_run_id()
     obs.new_trace(run_id)
@@ -75,7 +77,8 @@ def run(
         "completed": [],
     }
     try:
-        out = graph.invoke(state, {"configurable": {"thread_id": run_id}})
+        with profile_mod.use(prof):
+            out = graph.invoke(state, {"configurable": {"thread_id": run_id}})
     except Exception as e:
         audit(store, actor, "run.failed", run_id, {"error": str(e)[:300]})
         raise
@@ -119,14 +122,34 @@ def resume(
         raise ValueError(f"no checkpoint for run {run_id}")
     if not snap.next:
         return RunInfo.model_validate(snap.values["info"])
-    profile_mod.set_active(profile_mod.Profile.model_validate(snap.values["profile"]))
+    prof = profile_mod.Profile.model_validate(snap.values["profile"])
     obs.new_trace(run_id)
     audit(store, actor, "run.resume", run_id, {"from": list(snap.next), "done": snap.values.get("completed")})
     try:
-        out = graph.invoke(None, cfg)
+        with profile_mod.use(prof):
+            out = graph.invoke(None, cfg)
     except Exception as e:
         audit(store, actor, "run.failed", run_id, {"error": str(e)[:300], "resumed": True})
         raise
     info = RunInfo.model_validate(out["info"])
     audit(store, actor, "run.done", run_id, {"resumed": True, "rag": out.get("rag")})
     return info
+
+
+def run_all(store: Store, actor: str = "scheduler", settings: Settings | None = None) -> list[dict]:
+    """Collect every saved profile, one after another (the daily job).
+
+    One profile failing does not stop the others; each outcome is returned and audited.
+    With no saved profiles, the configured default is collected once.
+    """
+    saved = [profile_mod.Profile.model_validate(p["profile"]) for p in store.profiles()]
+    targets = saved or [profile_mod.sync_from(store)]
+    results = []
+    for prof in targets:
+        try:
+            info = run(source="youtube", settings=settings, store=store, actor=actor, profile=prof)
+            results.append({"profile": prof.id, "ok": True, "run": info})
+        except Exception as e:  # noqa: BLE001 - the next profile still runs
+            log.exception("collection for profile %s failed", prof.id)
+            results.append({"profile": prof.id, "ok": False, "error": str(e)[:300]})
+    return results

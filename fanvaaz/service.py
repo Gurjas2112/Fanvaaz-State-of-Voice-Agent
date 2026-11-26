@@ -34,7 +34,9 @@ def answerer_for(info: RunInfo, store: Store) -> Answerer:
     with _lock:
         a = _answerers.get(info.run_id)
         if a is None:
-            _answerers.clear()
+            # One answerer per run: with several products, keep the latest few instead of thrashing.
+            while len(_answerers) >= 4:
+                _answerers.pop(next(iter(_answerers)))
             s = get_settings()
             llm = get_llm(s)
             reports = {k: store.report(info.run_id, k) for k in store.keywords(info.run_id)}

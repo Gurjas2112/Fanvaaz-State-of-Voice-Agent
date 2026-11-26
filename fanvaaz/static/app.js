@@ -333,6 +333,7 @@
     $("ask-regen").addEventListener("click", () => { if (LAST) run(LAST.q, true); });
     try {
       await loadMe();
+      HZ.profileSwitcher($("profile-switch"));
       const setup = await checkSetup();
       if (setup.profile_configured) await loadProfile();
       if (setup.has_data && await loadBrief()) await Promise.all([loadKeywords(), initInbox(), loadPlan()]);

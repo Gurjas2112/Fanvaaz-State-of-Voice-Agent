@@ -140,3 +140,25 @@ def test_share_of_voice_runs_end_to_end_on_a_custom_profile():
     names = [b.brand for b in reports["all"].brands]
     assert set(names) == {"Acme", "Boilex"}
     assert abs(sum(b.sov for b in reports["all"].brands) - 1) < 1e-6
+
+
+def test_profile_scope_is_per_context_not_global():
+    """Two requests for different products at the same time never see each other's brands."""
+    import threading
+
+    from fanvaaz import profile
+    from fanvaaz.brands import brands_in
+
+    phones, scooters = profile.load("smartphones-india"), profile.load("ev-scooters-india")
+    seen, barrier = {}, threading.Barrier(2)
+
+    def worker(p, text):
+        with profile.use(p):
+            barrier.wait()  # both scopes are open at once
+            seen[p.id] = (profile.active().id, brands_in(text))
+
+    t1 = threading.Thread(target=worker, args=(phones, "OnePlus or Ather?"))
+    t2 = threading.Thread(target=worker, args=(scooters, "OnePlus or Ather?"))
+    t1.start(), t2.start(), t1.join(), t2.join()
+    assert seen["smartphones-india"] == ("smartphones-india", ["OnePlus"])
+    assert seen["ev-scooters-india"] == ("ev-scooters-india", ["Ather"])

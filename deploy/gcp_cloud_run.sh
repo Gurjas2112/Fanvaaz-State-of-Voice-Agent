@@ -152,7 +152,7 @@ echo "== 6. Daily live collection with Cloud Scheduler"
 TOKEN="$(gcloud secrets versions access latest --secret=fanvaaz-api-token)"
 JOB_ARGS=(--location="$REGION" --schedule="$DAILY_CRON" --time-zone=Asia/Kolkata
   --uri="$URL/api/v1/runs" --http-method=POST --attempt-deadline=1800s
-  --message-body='{"source":"youtube"}')
+  --message-body='{"source":"youtube","profile":"all"}')
 HEADERS="Authorization=Bearer $TOKEN,Content-Type=application/json"
 # create takes --headers, update takes --update-headers; output is hidden so the token is never printed.
 if gcloud scheduler jobs describe fanvaaz-daily --location="$REGION" >/dev/null 2>&1; then

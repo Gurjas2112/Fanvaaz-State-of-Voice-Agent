@@ -103,5 +103,20 @@ const HZ = (() => {
     location.href = "/";
   }
 
-  return { api, el, pct, $, toast, fan, signOut, setFocus, state };
+  // Product switcher: several tracked products, one chosen per browser (cookie read by the server).
+  async function profileSwitcher(select) {
+    if (!select) return [];
+    let items = [];
+    try { items = await api("/api/v1/profiles"); } catch { return []; }
+    select.hidden = items.length < 2;
+    select.replaceChildren(...items.map((p) => el("option", { value: p.id, selected: p.current || null },
+      `${p.name}${p.is_default ? " (default)" : ""}`)));
+    select.onchange = () => {
+      document.cookie = `fz_profile=${encodeURIComponent(select.value)}; path=/; max-age=31536000; samesite=lax`;
+      location.reload();
+    };
+    return items;
+  }
+
+  return { api, el, pct, $, toast, fan, signOut, setFocus, state, profileSwitcher };
 })();

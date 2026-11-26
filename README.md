@@ -190,6 +190,12 @@ Production-like stack on Postgres + pgvector: `docker compose up --build`.
 3. Click **Collect live from YouTube now** and watch the LangGraph nodes tick through.
 4. Past runs keep the brands they tracked; the profile change is in the audit log.
 
+**Several products side by side.** Use **Add as another product** to track a second category, for example
+smartphones and EV scooters, without replacing the first. A switcher in the header picks the product per browser
+(the `fz_profile` cookie), and API and MCP clients pass `?profile=<id>`. Each request is scoped through a context
+variable, so concurrent requests for different products never mix; a test checks this. The daily job
+(`{"profile": "all"}`) collects every product, and runs, briefs, Ask and exports all follow the selected product.
+
 ---
 
 ## Quality harness
@@ -327,6 +333,10 @@ ones are `YOUTUBE_API_KEY`, `DATABASE_URL`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_
 `MAX_PROMPT_TOKENS`, `PROFILE`, `ADMIN_EMAIL` and `ADMIN_PASSWORD`, `API_TOKEN` and `MCP_TOKEN`.
 
 ## Limitations
+
+- The daily Cloud Scheduler call collects every product in sequence inside one 30-minute request (about 8 minutes
+  per product with 4 search terms), so it fits about three products. For more, schedule one job per product
+  (`{"profile": "<id>"}`).
 
 - The LLM-graded metrics (DeepEval, Ragas) need a funded Gemini key. Without one, Fanvaaz runs on rules and
   BM25, and this README reports only numbers that actually ran.

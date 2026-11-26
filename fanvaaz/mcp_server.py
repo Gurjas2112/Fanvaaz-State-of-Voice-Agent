@@ -59,7 +59,11 @@ def _require_admin(tool: str) -> None:
 
 def _latest():
     store = default_store()
-    info = store.latest_run()
+    try:
+        pid = profile_mod.active().id  # ?profile= on the MCP URL scopes it; else the default
+    except profile_mod.NoProfileError:
+        pid = None
+    info = store.latest_run(profile_id=pid)
     if info is None:
         raise ValueError("No data yet: run a collection first.")
     return store, info

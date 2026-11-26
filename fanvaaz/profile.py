@@ -13,10 +13,13 @@ that tracked the same focus brand.
 
 from __future__ import annotations
 
+import contextvars
+import hashlib
 import json
 import re
 import threading
 from collections.abc import Callable
+from contextlib import contextmanager
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -163,13 +166,66 @@ def load(ref: str) -> Profile:
 
 
 # ---- the active profile -----------------------------------------------------
-# One process tracks one profile at a time. Modules read it through active();
-# caches derived from it (compiled brand patterns, topic words) register a
-# reset hook so a switch takes effect on the very next call.
+# A workspace can track several profiles side by side (smartphones and EV
+# scooters, say). Modules read the current one through active():
+#
+#   * `use(p)` scopes a profile to the current context: one HTTP request (set by
+#     middleware), one collection run, one thread. Concurrent requests for
+#     different profiles never see each other's profile.
+#   * outside any scope, active() falls back to the process default (the
+#     workspace's default profile, or FANVAAZ_PROFILE).
+#
+# Caches derived from a profile (compiled brand patterns, topic words) are keyed
+# by `fingerprint(p)`, so two profiles can be cached at once; the reset hooks
+# remain for tests that replace the default.
 
 _lock = threading.Lock()
 _active: Profile | None = None
 _hooks: list[Callable[[], None]] = []
+_scoped: contextvars.ContextVar[Profile | None] = contextvars.ContextVar("fanvaaz_profile", default=None)
+
+
+_fp_memo: dict[int, tuple[Profile, str]] = {}
+
+
+def fingerprint(p: Profile) -> str:
+    """A stable key for caches: the same profile content gives the same key (memoised per object)."""
+    hit = _fp_memo.get(id(p))
+    if hit is not None and hit[0] is p:
+        return hit[1]
+    fp = p.id + ":" + hashlib.sha256(p.model_dump_json().encode("utf-8")).hexdigest()[:12]
+    if len(_fp_memo) > 256:
+        _fp_memo.clear()
+    _fp_memo[id(p)] = (p, fp)
+    return fp
+
+
+def per_profile(build: Callable[[Profile], object]):
+    """Cache `build(active())` per profile fingerprint; `.cache_clear()` empties it."""
+    cache: dict[str, object] = {}
+
+    def get():
+        p = active()
+        key = fingerprint(p)
+        val = cache.get(key)
+        if val is None:
+            if len(cache) > 16:
+                cache.clear()
+            val = cache[key] = build(p)
+        return val
+
+    get.cache_clear = cache.clear  # type: ignore[attr-defined]
+    return get
+
+
+@contextmanager
+def use(p: Profile):
+    """Make `p` the active profile for this context (request, run or thread)."""
+    token = _scoped.set(p)
+    try:
+        yield p
+    finally:
+        _scoped.reset(token)
 
 
 def on_change(fn: Callable[[], None]) -> Callable[[], None]:
@@ -181,11 +237,14 @@ def configured() -> bool:
     """True once a profile is active or one is set in FANVAAZ_PROFILE."""
     from .config import get_settings
 
-    return _active is not None or bool(get_settings().profile)
+    return _scoped.get() is not None or _active is not None or bool(get_settings().profile)
 
 
 def active() -> Profile:
     global _active
+    scoped = _scoped.get()
+    if scoped is not None:
+        return scoped
     if _active is None:
         with _lock:
             if _active is None:
@@ -216,6 +275,23 @@ def reset() -> None:
         _active = None
     for fn in _hooks:
         fn()
+
+
+def scoped() -> Profile | None:
+    """The profile set by use() for this context, if any."""
+    return _scoped.get()
+
+
+def resolve(store, profile_id: str | None) -> Profile:
+    """A saved profile by id; an unknown or missing id gives the workspace default."""
+    if profile_id:
+        saved = store.saved_profile(profile_id)
+        if saved:
+            try:
+                return Profile.model_validate(saved["profile"])
+            except ValueError:
+                pass
+    return sync_from(store)
 
 
 def sync_from(store) -> Profile:

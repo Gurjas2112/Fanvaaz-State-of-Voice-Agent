@@ -16,6 +16,7 @@ import csv
 import io
 import json
 import logging
+import re
 import threading
 import time
 import uuid
@@ -108,7 +109,9 @@ async def lifespan(app: FastAPI):
     except Exception:  # a weak admin password must not stop the service from starting
         log.exception("first admin account was NOT created (check FANVAAZ_ADMIN_PASSWORD rules)")
     try:
-        profile_mod.sync_from(store)
+        prof = profile_mod.sync_from(store)
+        if not store.profiles():  # a profile from FANVAAZ_PROFILE: register it so the switcher lists it
+            store.save_profile(prof.model_dump(), "system", make_default=True)
     except profile_mod.NoProfileError:
         log.warning("no tracking profile yet: an admin must choose one on /admin")
     task = None
@@ -160,6 +163,36 @@ def _request_user(request: Request) -> User | None:
     return acc.user_for_bearer(request.headers.get("authorization")) or acc.user_for_token(
         request.cookies.get(COOKIE)
     )
+
+
+PROFILE_COOKIE = "fz_profile"
+_PROFILE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
+
+
+@app.middleware("http")
+async def profile_scope(request: Request, call_next):
+    """Serve each API request under one tracking profile: ?profile=<id>, else the switcher's
+    cookie, else the workspace default. A context variable, so concurrent requests for
+    different profiles never mix."""
+    path = request.url.path
+    if not (path.startswith("/api/") or path.startswith("/mcp")):
+        return await call_next(request)
+    pid = request.query_params.get("profile") or request.cookies.get(PROFILE_COOKIE)
+    pid = pid if pid and _PROFILE_ID.match(pid) else None
+    try:
+        store = app.dependency_overrides.get(get_store, get_store)()
+        prof = await asyncio.to_thread(profile_mod.resolve, store, pid)
+    except profile_mod.NoProfileError:
+        return await call_next(request)
+    with profile_mod.use(prof):
+        return await call_next(request)
+
+
+def _profile_id() -> str | None:
+    try:
+        return profile_mod.active().id
+    except profile_mod.NoProfileError:
+        return None
 
 
 @app.middleware("http")
@@ -230,7 +263,7 @@ def csrf_for_anonymous(request: Request) -> None:
 
 
 def latest_or_404(store: Store = Depends(get_store), _: User = Depends(current_user)) -> RunInfo:
-    info = store.latest_run()
+    info = store.latest_run(profile_id=_profile_id())
     if not info:
         raise HTTPException(404, "No data yet. An admin can start a live collection from the admin page.")
     return info
@@ -384,6 +417,11 @@ class AskResponse(BaseModel):
 class RunRequest(StrictIn):
     source: Literal["youtube"] = "youtube"
     keywords: list[str] | None = Field(default=None, max_length=10)
+    profile: str | None = Field(
+        default=None,
+        pattern=r"^[a-z0-9][a-z0-9-]{1,39}$",
+        description="A profile id, 'all' (every profile: the daily job), or empty for the current one",
+    )
 
 
 class JobOut(BaseModel):
@@ -413,6 +451,9 @@ class ProfilePut(StrictIn):
 
     preset: PresetId | None = None
     profile: profile_mod.Profile | None = None
+    make_default: bool = Field(
+        default=True, description="Also make it the workspace default; false adds it alongside the others"
+    )
 
     @model_validator(mode="after")
     def _exactly_one(self) -> ProfilePut:
@@ -421,11 +462,18 @@ class ProfilePut(StrictIn):
         return self
 
 
+class ProfileItem(ProfileSummary):
+    is_default: bool
+    current: bool
+    last_run_at: str | None
+
+
 class ProfileAdmin(BaseModel):
     active: profile_mod.Profile | None
     updated_by: str | None
     updated_at: str | None
     presets: list[ProfileSummary]
+    profiles: list[ProfileItem] = Field(default_factory=list)
 
 
 class PrefsIn(StrictIn):
@@ -618,7 +666,7 @@ def public_preview(store: Store = Depends(get_store)) -> dict:
     Turn off with FANVAAZ_PUBLIC_PREVIEW=false.
     """
     s = get_settings()
-    info = store.latest_run() if s.public_preview else None
+    info = store.latest_run(profile_id=_profile_id()) if s.public_preview else None
     if info is None:
         return {"available": False}
     rep = store.report(info.run_id, "all")
@@ -636,7 +684,7 @@ def public_preview(store: Store = Depends(get_store)) -> dict:
 def setup_status(store: Store = Depends(get_store), _: User = Depends(current_user)) -> dict:
     """What a fresh install still needs: drives the onboarding banner."""
     s = get_settings()
-    latest = store.latest_run()
+    latest = store.latest_run(profile_id=_profile_id())
     return {
         "profile_configured": profile_mod.configured() or store.saved_profile() is not None,
         "has_data": latest is not None,
@@ -650,7 +698,7 @@ def setup_status(store: Store = Depends(get_store), _: User = Depends(current_us
 @app.get("/api/v1/brief", tags=["daily"], responses=AUTH)
 def brief(store: Store = Depends(get_store), _: User = Depends(current_user)) -> dict:
     """One-sentence morning brief with changes since the previous run."""
-    return build_brief(store)
+    return build_brief(store, profile_id=_profile_id())
 
 
 @app.get("/api/v1/runs/latest", response_model=RunInfo, tags=["runs"], responses=NO_DATA)
@@ -1095,7 +1143,7 @@ def _feedback_status(store: Store, days: int) -> dict:
 
 def _rag_index_status(store: Store) -> dict:
     """How much of the latest run Ask can search by meaning (embedded) vs by words only."""
-    info = store.latest_run()
+    info = store.latest_run(profile_id=_profile_id())
     if info is None:
         return {"run_id": None, "chunks": 0, "embedded": 0}
     with store._conn() as c:
@@ -1147,8 +1195,23 @@ def create_run(
     body: RunRequest, store: Store = Depends(get_store), user: User = Depends(require_admin)
 ) -> RunInfo:
     """Collect live YouTube data and score it; returns when the run is stored (Cloud Scheduler uses this)."""
+    if body.profile == "all":
+        from .pipeline import run_all
+
+        results = run_all(store, actor=user.email)
+        clear_answerers()
+        done = [r["run"] for r in results if r["ok"]]
+        failed = [f"{r['profile']}: {r['error']}" for r in results if not r["ok"]]
+        if failed:
+            log.warning("daily collection: %d of %d profile(s) failed: %s", len(failed), len(results), failed)
+        if not done:
+            raise HTTPException(502, "Every profile failed: " + "; ".join(failed)[:500])
+        return done[-1]
+    prof = profile_mod.resolve(store, body.profile) if body.profile else None
     try:
-        info = run_pipeline(source=body.source, keywords=body.keywords, store=store, actor=user.email)
+        info = run_pipeline(
+            source=body.source, keywords=body.keywords, store=store, actor=user.email, profile=prof
+        )
     except (RuntimeError, ValueError) as e:
         log.warning("collection rejected (400): %s", e)
         raise HTTPException(400, str(e)) from e
@@ -1194,13 +1257,17 @@ def _job(store: Store, job_id: str) -> dict | None:
     return dict(zip(_JOB_COLS.split(", "), r, strict=True)) if r else None
 
 
-def _run_job(store: Store, job_id: str, keywords: list[str] | None, actor: str) -> None:
+def _run_job(
+    store: Store, job_id: str, keywords: list[str] | None, actor: str, prof: profile_mod.Profile
+) -> None:
     def progress(node: str) -> None:
         with store._conn() as c:
             c.execute("UPDATE run_jobs SET status = 'running', progress = ? WHERE job_id = ?", (node, job_id))
 
     try:
-        info = run_pipeline(source="youtube", keywords=keywords, store=store, actor=actor, progress=progress)
+        info = run_pipeline(
+            source="youtube", keywords=keywords, store=store, actor=actor, progress=progress, profile=prof
+        )
         status, run_id, err = "done", info.run_id, None
         clear_answerers()
     except Exception as e:  # noqa: BLE001 - the job records the failure for the UI
@@ -1223,7 +1290,8 @@ def start_run_job(
     s = get_settings()
     if not s.youtube_api_key:
         raise HTTPException(400, "Set FANVAAZ_YOUTUBE_API_KEY to collect live data")
-    profile_mod.sync_from(store)
+    # A thread does not inherit this request's context: hand it the profile explicitly.
+    prof = profile_mod.resolve(store, body.profile) if body.profile else profile_mod.active()
     with store._conn() as c:
         busy = c.execute("SELECT job_id FROM run_jobs WHERE status IN ('queued', 'running')").fetchone()
     if busy:
@@ -1234,7 +1302,9 @@ def start_run_job(
             "INSERT INTO run_jobs (job_id, status, started_at, requested_by, progress) VALUES (?,?,?,?,?)",
             (job_id, "queued", datetime.now(UTC).isoformat(timespec="seconds"), user.email, "queued"),
         )
-    threading.Thread(target=_run_job, args=(store, job_id, body.keywords, user.email), daemon=True).start()
+    threading.Thread(
+        target=_run_job, args=(store, job_id, body.keywords, user.email, prof), daemon=True
+    ).start()
     return _job(store, job_id)
 
 
@@ -1262,38 +1332,116 @@ def get_profile(_: User = Depends(current_user)) -> ProfileSummary:
     return _summary(profile_mod.active())
 
 
+def _profile_items(store: Store) -> list[ProfileItem]:
+    current = _profile_id()
+    items = []
+    for row in store.profiles():
+        p = profile_mod.Profile.model_validate(row["profile"])
+        last = store.latest_run(profile_id=p.id)
+        items.append(
+            ProfileItem(
+                **_summary(p).model_dump(),
+                is_default=row["is_default"],
+                current=p.id == current,
+                last_run_at=last.created_at if last else None,
+            )
+        )
+    return items
+
+
+@app.get("/api/v1/profiles", response_model=list[ProfileItem], tags=["profile"], responses=AUTH)
+def list_profiles(store: Store = Depends(get_store), _: User = Depends(current_user)) -> list[ProfileItem]:
+    """Every tracked product, for the switcher. Pick one with ?profile=<id> or the fz_profile cookie."""
+    return _profile_items(store)
+
+
 @app.get("/api/v1/admin/profile", response_model=ProfileAdmin, tags=["admin"], responses=ADMIN)
 def admin_profile(store: Store = Depends(get_store), _: User = Depends(require_admin)) -> ProfileAdmin:
-    saved = store.saved_profile() or {}
+    """The profile this request is scoped to (the switcher's choice), plus every saved profile."""
     try:
-        active = profile_mod.sync_from(store)
+        active = profile_mod.active()
     except profile_mod.NoProfileError:
         active = None
+    saved = (store.saved_profile(active.id) if active else None) or {}
     return ProfileAdmin(
         active=active,
         updated_by=saved.get("updated_by"),
         updated_at=saved.get("updated_at"),
         presets=[_summary(p) for p in profile_mod.presets().values()],
+        profiles=_profile_items(store),
     )
 
 
 @app.put("/api/v1/admin/profile", response_model=ProfileAdmin, tags=["admin"], responses={**ADMIN, **WRITE})
 def admin_set_profile(
-    body: ProfilePut, store: Store = Depends(get_store), user: User = Depends(require_admin)
+    body: ProfilePut,
+    response: Response,
+    store: Store = Depends(get_store),
+    user: User = Depends(require_admin),
 ) -> ProfileAdmin:
-    """Switch to a template or save a custom profile. Past runs keep the brands they tracked."""
+    """Add or update a tracked product (by its id). make_default=true (the default) also makes it the
+    workspace default; false adds it alongside the others. Past runs keep the brands they tracked."""
     new = profile_mod.load(body.preset) if body.preset is not None else body.profile
-    store.save_profile(new.model_dump(), user.email)
-    profile_mod.set_active(new)
+    store.save_profile(new.model_dump(), user.email, make_default=body.make_default)
+    if body.make_default:
+        profile_mod.set_active(new)
     clear_answerers()
     audit(
         store,
         user.email,
         "profile.set",
         new.id,
-        {"focus_brand": new.focus_brand, "brands": list(new.brands), "keywords": new.keywords},
+        {
+            "focus_brand": new.focus_brand,
+            "brands": list(new.brands),
+            "keywords": new.keywords,
+            "default": body.make_default,
+        },
     )
-    return admin_profile(store, user)
+    # The admin keeps looking at what they just saved.
+    response.set_cookie(PROFILE_COOKIE, new.id, max_age=365 * 86400, samesite="lax", path="/")
+    with profile_mod.use(new):
+        return admin_profile(store, user)
+
+
+@app.post(
+    "/api/v1/admin/profiles/{profile_id}/default",
+    response_model=list[ProfileItem],
+    tags=["admin"],
+    responses={**ADMIN, **WRITE, 404: {"model": ErrorBody, "description": "No such profile"}},
+)
+def admin_default_profile(
+    profile_id: str = Path(pattern=r"^[a-z0-9][a-z0-9-]{1,39}$"),
+    store: Store = Depends(get_store),
+    user: User = Depends(require_admin),
+) -> list[ProfileItem]:
+    """Make a profile the workspace default (what new users and the landing page see)."""
+    if not store.set_default_profile(profile_id):
+        raise HTTPException(404, "No such profile.")
+    profile_mod.sync_from(store)
+    audit(store, user.email, "profile.default", profile_id)
+    return _profile_items(store)
+
+
+@app.delete(
+    "/api/v1/admin/profiles/{profile_id}",
+    status_code=204,
+    tags=["admin"],
+    responses={**ADMIN, **WRITE, 404: {"model": ErrorBody}, 409: {"model": ErrorBody}},
+)
+def admin_delete_profile(
+    profile_id: str = Path(pattern=r"^[a-z0-9][a-z0-9-]{1,39}$"),
+    store: Store = Depends(get_store),
+    user: User = Depends(require_admin),
+) -> Response:
+    """Stop tracking a product. Its past runs stay in the history; the default cannot be deleted."""
+    outcome = store.delete_profile(profile_id)
+    if outcome == "missing":
+        raise HTTPException(404, "No such profile.")
+    if outcome == "is_default":
+        raise HTTPException(409, "Make another profile the default before deleting this one.")
+    audit(store, user.email, "profile.delete", profile_id)
+    return Response(status_code=204)
 
 
 # ---- PWA and Android app support -----------------------------------------------------

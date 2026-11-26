@@ -49,9 +49,35 @@
     }
   }
 
+  let EDITING_DEFAULT = true;
+
+  function useProduct(id) {
+    document.cookie = `fz_profile=${encodeURIComponent(id)}; path=/; max-age=31536000; samesite=lax`;
+    location.reload();
+  }
+
+  function showProducts(items) {
+    $("profiles-rows").replaceChildren(...items.map((x) => el("tr", { "data-testid": "profile-row" },
+      el("td", {}, x.name, x.is_default ? el("span", { class: "badge" }, " default") : null, x.current ? el("span", { class: "badge" }, " viewing") : null),
+      el("td", {}, x.focus_brand),
+      el("td", {}, x.last_run_at ? fmt(x.last_run_at) : "Not collected yet"),
+      el("td", { class: "row-actions" },
+        x.current ? null : el("button", { type: "button", class: "btn ghost small", onclick: () => useProduct(x.id) }, "View"),
+        x.is_default ? null : el("button", { type: "button", class: "btn ghost small", "data-testid": "make-default",
+          onclick: () => api(`/api/v1/admin/profiles/${x.id}/default`, { method: "POST" }).then(loadProfile).then(() => toast(`${x.name} is now the default`)) }, "Make default"),
+        x.is_default ? null : el("button", { type: "button", class: "btn ghost small", "data-testid": "delete-profile",
+          onclick: () => { if (confirm(`Stop tracking ${x.name}? Its past collections stay in the history.`))
+            api(`/api/v1/admin/profiles/${x.id}`, { method: "DELETE" }).then(() => (x.current ? useProduct("") : loadProfile())); } }, "Remove")))));
+  }
+
   function showProfile(data) {
     const p = data.active;
     $("onboarding").hidden = !!p;
+    showProducts(data.profiles || []);
+    const cur = (data.profiles || []).find((x) => x.current);
+    EDITING_DEFAULT = !cur || cur.is_default;
+    $("editing-name").textContent = p ? `${p.name}${EDITING_DEFAULT ? " (default)" : ""}` : "nothing yet";
+    HZ.profileSwitcher($("profile-switch"));
     $("preset").replaceChildren(...data.presets.map((x) => el("option", { value: x.id }, `${x.name} (${x.focus_brand} vs ${x.rivals.length} rivals)`)));
     if (!p) {
       $("track-current").replaceChildren(el("dt", {}, "Setup"), el("dd", {}, "Nothing tracked yet"));
@@ -140,7 +166,17 @@
       $("profile-error").textContent = "The profile is not valid JSON. Check for a missing comma or quote.";
       return;
     }
-    saveProfile({ profile }, `Now tracking ${profile.focus_brand}`);
+    return profile;
+  }
+
+  function saveEdited() {
+    const profile = saveCustom();
+    if (profile) saveProfile({ profile, make_default: EDITING_DEFAULT }, `Saved ${profile.name}`);
+  }
+
+  function saveAsNew() {
+    const profile = saveCustom();
+    if (profile) saveProfile({ profile, make_default: false }, `Now also tracking ${profile.focus_brand}. Collect live data to see it.`);
   }
 
   function userRow(u) {
@@ -198,7 +234,9 @@
     $("signout").addEventListener("click", HZ.signOut);
     $("run-youtube").addEventListener("click", (e) => startRun(e.currentTarget));
     $("use-preset").addEventListener("click", () => saveProfile({ preset: $("preset").value }, "Setup switched. Collect live data to see it."));
-    $("save-profile").addEventListener("click", saveCustom);
+    $("save-profile").addEventListener("click", saveEdited);
+    $("add-profile").addEventListener("click", saveAsNew);
+    $("add-preset").addEventListener("click", () => saveProfile({ preset: $("preset").value, make_default: false }, "Product added. Collect live data to see it."));
     me = await api("/api/v1/auth/me");
     $("user-name").textContent = `Signed in as ${me.name}`;
     await Promise.all([loadRuns(), loadUsers(), loadSystem(), loadAiOps(), loadAudit()]);

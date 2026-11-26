@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from functools import lru_cache
 
 from . import profile
 
@@ -33,10 +32,10 @@ def _reset() -> None:
     _compiled.cache_clear()
 
 
-@lru_cache(maxsize=1)
-def _compiled() -> list[tuple[str, str, re.Pattern[str]]]:
+@profile.per_profile
+def _compiled(p) -> list[tuple[str, str, re.Pattern[str]]]:
     entries: list[tuple[str, str]] = [
-        (brand, alias) for brand, aliases in profile.active().brands.items() for alias in aliases
+        (brand, alias) for brand, aliases in p.brands.items() for alias in aliases
     ]
     # Longest alias first so "orient electric" wins over "orient".
     entries.sort(key=lambda e: len(e[1]), reverse=True)

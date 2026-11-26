@@ -20,8 +20,8 @@ def _brand_row(report, brand):
     return None, None
 
 
-def build_brief(store: Store, focus: str | None = None) -> dict:
-    run = store.latest_run()
+def build_brief(store: Store, focus: str | None = None, profile_id: str | None = None) -> dict:
+    run = store.latest_run(profile_id=profile_id)
     if run is None:
         return {"has_data": False}
     focus = focus or run.focus_brand

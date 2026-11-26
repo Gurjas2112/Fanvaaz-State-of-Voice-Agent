@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from functools import lru_cache
 
 from . import profile
 from .brands import brands_in
@@ -150,9 +149,8 @@ def injection_score(text: str) -> float:
 _FILLER = {"the", "and", "for", "with", "best", "india", "from", "your", "new", "buy", "per", "vs"}
 
 
-@lru_cache(maxsize=1)
-def _topic_words() -> frozenset[str]:
-    p = profile.active()
+@profile.per_profile
+def _topic_words(p) -> frozenset[str]:
     words = set(DOMAIN_WORDS) | set(p.domain_words)
     for phrase in [p.category, *p.keywords, *p.aspects, *(w for ws in p.aspects.values() for w in ws)]:
         words |= set(re.findall(r"[a-z]+", phrase.lower()))

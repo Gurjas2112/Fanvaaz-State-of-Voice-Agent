@@ -91,11 +91,12 @@ def build(settings: Settings, store, llm: LLM | None, embedder=None, progress=No
         def wrap(fn):
             def run_node(state: CollectState):
                 obs.set_run(state.get("run_id"))
-                profile_mod.set_active(profile_mod.Profile.model_validate(state["profile"]))
                 if progress:
                     progress(name)
-                with obs.span("collect", name):
-                    out = fn(state)
+                # Each node runs under the run's own profile, whatever the process default is.
+                with profile_mod.use(profile_mod.Profile.model_validate(state["profile"])):
+                    with obs.span("collect", name):
+                        out = fn(state)
                 out = dict(out or {})
                 out["completed"] = [name]
                 return out

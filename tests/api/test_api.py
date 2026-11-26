@@ -262,14 +262,45 @@ def test_admin_can_switch_profile_and_past_runs_keep_their_brands(client):
         assert r.status_code == 200, r.text
         assert r.json()["active"]["focus_brand"] == "Ather"
         assert client.get("/api/v1/profile").json()["focus_brand"] == "Ather"
-        # The stored run still reports on the brand it tracked.
-        after = client.get("/api/v1/sov").json()
-        assert after["focus_brand"] == "OnePlus"
-        assert after["report"] == before["report"]
+        # The new product has no collection yet; the smartphone run is still there under its own profile.
+        assert client.get("/api/v1/sov").status_code == 404
+        phones = client.get("/api/v1/sov?profile=smartphones-india").json()
+        assert phones["focus_brand"] == "OnePlus" and phones["report"] == before["report"]
         audit = client.get("/api/v1/admin/audit").json()
         assert audit[0]["action"] == "profile.set" and audit[0]["target"] == "ev-scooters-india"
     finally:
         assert client.put("/api/v1/admin/profile", json={"preset": "smartphones-india"}).status_code == 200
+        client.delete("/api/v1/admin/profiles/ev-scooters-india")
+
+
+def test_two_products_side_by_side(client, anon):
+    """Add a second product without replacing the first; requests are scoped per product."""
+    try:
+        r = client.put("/api/v1/admin/profile", json={"preset": "ev-scooters-india", "make_default": False})
+        assert r.status_code == 200
+        ids = {p["id"]: p for p in r.json()["profiles"]}
+        assert ids["smartphones-india"]["is_default"] and not ids["ev-scooters-india"]["is_default"]
+        assert ids["smartphones-india"]["last_run_at"] and ids["ev-scooters-india"]["last_run_at"] is None
+        # the default is unchanged: a request with no choice still sees smartphones
+        client.cookies.clear()
+        assert client.get("/api/v1/profile").json()["id"] == "smartphones-india"
+        assert client.get("/api/v1/sov").status_code == 200
+        # the switcher's cookie and ?profile= both scope a request
+        assert client.get("/api/v1/profile?profile=ev-scooters-india").json()["focus_brand"] == "Ather"
+        client.cookies.set("fz_profile", "ev-scooters-india")
+        assert client.get("/api/v1/profile").json()["focus_brand"] == "Ather"
+        assert client.get("/api/v1/brief").json() == {"has_data": False}
+        # an unknown or malformed id falls back to the default instead of failing
+        assert client.get("/api/v1/profile?profile=nope").json()["id"] == "smartphones-india"
+        assert client.get("/api/v1/profile?profile=../x").json()["id"] == "smartphones-india"
+        # the default cannot be deleted; others can, and their history stays
+        assert client.delete("/api/v1/admin/profiles/smartphones-india").status_code == 409
+        assert client.post("/api/v1/admin/profiles/nope/default").status_code == 404
+        assert anon.get("/api/v1/profiles").status_code == 401
+    finally:
+        client.cookies.clear()
+        assert client.delete("/api/v1/admin/profiles/ev-scooters-india").status_code in (204, 404)
+    assert [p["id"] for p in client.get("/api/v1/profiles").json()] == ["smartphones-india"]
 
 
 def test_custom_profile_is_validated_with_a_readable_error(client):

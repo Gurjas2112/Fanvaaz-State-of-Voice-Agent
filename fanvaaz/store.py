@@ -104,7 +104,10 @@ class Store:
                 ],
             )
 
-    def latest_run(self) -> RunInfo | None:
+    def latest_run(self, profile_id: str | None = None) -> RunInfo | None:
+        """The newest run, optionally of one profile (runs store the profile they used)."""
+        if profile_id:
+            return next(iter(self.runs(200, profile_id=profile_id)), None)
         with self._conn() as c:
             row = c.execute(f"SELECT {RUN_COLS} FROM runs ORDER BY created_at DESC LIMIT 1").fetchone()
         if not row:
@@ -156,17 +159,29 @@ class Store:
         return [json.loads(r[0]) for r in rows]
 
     # ---- run history and day-over-day comparison --------------------------
-    def runs(self, limit: int = 30) -> list[RunInfo]:
+    def runs(self, limit: int = 30, profile_id: str | None = None) -> list[RunInfo]:
+        # Filtered in Python: the profile is a JSON column, and run history is small.
+        fetch = limit if not profile_id else max(limit * 10, 500)
         with self._conn() as c:
             rows = c.execute(
-                f"SELECT {RUN_COLS} FROM runs ORDER BY created_at DESC LIMIT ?", (limit,)
+                f"SELECT {RUN_COLS} FROM runs ORDER BY created_at DESC LIMIT ?", (fetch,)
             ).fetchall()
-        return [_run_from_row(r) for r in rows]
+        out = [_run_from_row(r) for r in rows]
+        if profile_id:
+            out = [r for r in out if r.profile_id == profile_id]
+        return out[:limit]
 
     def previous_run(self, run_id: str, same_source: bool = True) -> RunInfo | None:
-        cur = next((r for r in self.runs(200) if r.run_id == run_id), None)
-        for r in self.runs(200):
-            if cur and r.created_at < cur.created_at and (not same_source or r.source == cur.source):
+        """The run before this one, of the same profile (and source): what 'since last run' compares."""
+        history = self.runs(500)
+        cur = next((r for r in history if r.run_id == run_id), None)
+        for r in history:
+            if (
+                cur
+                and r.created_at < cur.created_at
+                and (not same_source or r.source == cur.source)
+                and (r.profile_id == cur.profile_id or not cur.profile_id)
+            ):
                 return r
         return None
 
@@ -202,19 +217,62 @@ class Store:
             (r[0], r[1]): {"status": r[2], "note": r[3], "updated_by": r[4], "updated_at": r[5]} for r in rows
         }
 
-    # ---- tracking profile chosen by an admin -------------------------------
-    def saved_profile(self) -> dict | None:
-        with self._conn() as c:
-            row = c.execute("SELECT body, updated_by, updated_at FROM app_profile WHERE id = 1").fetchone()
-        if not row:
-            return None
-        return {"profile": json.loads(row[0]), "updated_by": row[1], "updated_at": row[2]}
+    # ---- tracking profiles chosen by an admin (several per workspace) ------
+    @staticmethod
+    def _profile_row(row) -> dict:
+        return {
+            "profile": json.loads(row[0]),
+            "updated_by": row[1],
+            "updated_at": row[2],
+            "is_default": bool(row[3]),
+        }
 
-    def save_profile(self, body: dict, user_email: str) -> None:
+    def profiles(self) -> list[dict]:
+        """Every saved profile, the default first."""
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT body, updated_by, updated_at, is_default FROM profiles ORDER BY is_default DESC, id"
+            ).fetchall()
+        return [self._profile_row(r) for r in rows]
+
+    def saved_profile(self, profile_id: str | None = None) -> dict | None:
+        """One saved profile by id, or the workspace default."""
+        sql = "SELECT body, updated_by, updated_at, is_default FROM profiles WHERE "
+        sql += "id = ?" if profile_id else "is_default = 1"
+        with self._conn() as c:
+            row = c.execute(sql, (profile_id,) if profile_id else ()).fetchone()
+        return self._profile_row(row) if row else None
+
+    def save_profile(self, body: dict, user_email: str, make_default: bool = False) -> None:
+        """Add or update a profile (by its id). The first profile saved becomes the default."""
         now = datetime.now(UTC).isoformat(timespec="seconds")
         with self._lock, self._conn() as c:
+            has_default = c.execute("SELECT 1 FROM profiles WHERE is_default = 1").fetchone() is not None
             c.execute(
-                "INSERT INTO app_profile VALUES (1, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET"
-                " body = excluded.body, updated_by = excluded.updated_by, updated_at = excluded.updated_at",
-                (json.dumps(body, ensure_ascii=False), user_email, now),
+                "INSERT INTO profiles (id, body, updated_by, updated_at, is_default) VALUES (?,?,?,?,0)"
+                " ON CONFLICT (id) DO UPDATE SET body = excluded.body, updated_by = excluded.updated_by,"
+                " updated_at = excluded.updated_at",
+                (body["id"], json.dumps(body, ensure_ascii=False), user_email, now),
             )
+            if make_default or not has_default:
+                c.execute(
+                    "UPDATE profiles SET is_default = CASE WHEN id = ? THEN 1 ELSE 0 END", (body["id"],)
+                )
+
+    def set_default_profile(self, profile_id: str) -> bool:
+        with self._lock, self._conn() as c:
+            if c.execute("SELECT 1 FROM profiles WHERE id = ?", (profile_id,)).fetchone() is None:
+                return False
+            c.execute("UPDATE profiles SET is_default = CASE WHEN id = ? THEN 1 ELSE 0 END", (profile_id,))
+        return True
+
+    def delete_profile(self, profile_id: str) -> str:
+        """'deleted', 'missing' or 'is_default'. Past runs of a deleted profile stay in the history."""
+        with self._lock, self._conn() as c:
+            row = c.execute("SELECT is_default FROM profiles WHERE id = ?", (profile_id,)).fetchone()
+            if row is None:
+                return "missing"
+            if row[0]:
+                return "is_default"
+            c.execute("DELETE FROM profiles WHERE id = ?", (profile_id,))
+        return "deleted"

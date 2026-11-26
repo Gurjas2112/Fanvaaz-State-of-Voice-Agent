@@ -27,7 +27,6 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
-from functools import lru_cache
 
 from . import profile
 from .brands import find_spans
@@ -123,10 +122,10 @@ def _term_re(term: str) -> re.Pattern[str]:
     return re.compile(r"(?<![\w])" + body + r"(?![\w])", re.IGNORECASE)
 
 
-@lru_cache(maxsize=1)
-def _compiled() -> dict[str, list[tuple[str, re.Pattern[str]]]]:
+@profile.per_profile
+def _compiled(p) -> dict[str, list[tuple[str, re.Pattern[str]]]]:
     """Base terms that hold for any physical product, plus the profile's own."""
-    extra = profile.active().risk_terms
+    extra = p.risk_terms
     out = {}
     for cat, spec in RISK_CATEGORIES.items():
         terms = list(dict.fromkeys([*spec["terms"], *extra.get(cat, [])]))

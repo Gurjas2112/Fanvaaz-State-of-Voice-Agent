@@ -19,6 +19,8 @@
       <a href="/admin" aria-current="page">Admin</a>
     </nav>
     <div class="who">
+      <label class="visually-hidden" for="profile-switch">Tracked product</label>
+      <select class="input small" id="profile-switch" data-testid="profile-switch" hidden></select>
       <span id="user-name" data-testid="user-name"></span>
       <a href="/account" data-testid="account-link">Account</a>
       <button class="btn ghost small" id="signout" data-testid="signout" type="button">Sign out</button>
@@ -37,13 +39,22 @@
 
     <section class="panel" aria-labelledby="track-title" data-testid="track-panel">
       <h2 id="track-title">What Fanvaaz tracks</h2>
-      <p class="sub">Pick a ready-made setup or describe your own brand, its rivals and the searches your buyers use.
-        Changes apply from the next collection; past runs keep the brands they tracked.</p>
+      <p class="sub">Track one product or several side by side. Pick a ready-made setup or describe your own brand, its
+        rivals and the searches your buyers use. Changes apply from the next collection; past runs keep the brands they
+        tracked. The daily collection covers every product.</p>
+      <div class="table-wrap">
+        <table class="table" data-testid="profiles-table">
+          <thead><tr><th>Product</th><th>Focus brand</th><th>Last collected</th><th></th></tr></thead>
+          <tbody id="profiles-rows"></tbody>
+        </table>
+      </div>
+      <h3 class="sub-title">Editing: <span id="editing-name" data-testid="editing-name"></span></h3>
       <dl class="facts-list" id="track-current" data-testid="track-current"></dl>
       <div class="inbox-tools">
         <label class="visually-hidden" for="preset">Ready-made setup</label>
         <select class="input" id="preset" data-testid="preset"></select>
         <button class="btn" type="button" id="use-preset" data-testid="use-preset">Use this setup</button>
+        <button class="btn ghost" type="button" id="add-preset" data-testid="add-preset">Add as another product</button>
       </div>
       <details class="json-edit">
         <summary>Set up your own brand</summary>
@@ -53,6 +64,7 @@
         <textarea class="input code" id="profile-json" data-testid="profile-json" rows="16" spellcheck="false"></textarea>
         <div class="inbox-tools">
           <button class="btn" type="button" id="save-profile" data-testid="save-profile">Save profile</button>
+          <button class="btn ghost" type="button" id="add-profile" data-testid="add-profile">Save as another product</button>
         </div>
       </details>
       <p class="error" id="profile-error" role="alert" data-testid="profile-error"></p>

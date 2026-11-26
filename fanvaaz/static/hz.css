@@ -165,6 +165,9 @@ p { margin: 0; }
 .progress { list-style: none; padding: 0; margin: 14px 0 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--muted, #5b6474); }
 .progress li::before { content: "✓ "; color: var(--teal, #1b9e8f); }
 .progress li:last-child::before { content: "… "; }
+.input.small { padding: 4px 8px; font-size: 13px; width: auto; max-width: 220px; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.sub-title { font-size: 15px; margin: 18px 0 6px; }
 .ask-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
 #ask-followups { margin-top: 12px; }
 .sources { color: var(--ink-soft); font-size: 15px; padding-left: 20px; }
