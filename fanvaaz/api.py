@@ -908,6 +908,28 @@ def admin_ai_ops(
         **obs.ai_ops(store, days),
         "governance": Governance(get_settings(), store).summary(),
         "prompts": prompts.catalog(),
+        "rag": _rag_index_status(store),
+    }
+
+
+def _rag_index_status(store: Store) -> dict:
+    """How much of the latest run Ask can search by meaning (embedded) vs by words only."""
+    info = store.latest_run()
+    if info is None:
+        return {"run_id": None, "chunks": 0, "embedded": 0}
+    with store._conn() as c:
+        n, embedded = c.execute(
+            "SELECT COUNT(*), SUM(CASE WHEN embedding IS NOT NULL THEN 1 ELSE 0 END)"
+            " FROM rag_chunks WHERE run_id = ?",
+            (info.run_id,),
+        ).fetchone()
+    s = get_settings()
+    return {
+        "run_id": info.run_id,
+        "chunks": int(n or 0),
+        "embedded": int(embedded or 0),
+        "embed_model": s.embed_model,
+        "embed_dims": s.embed_dims,
     }
 
 
@@ -952,6 +974,32 @@ def create_run(
     except Exception as e:  # e.g. an unexpected YouTube HTTP error: log the reason, answer 502
         log.exception("collection failed")
         raise HTTPException(502, f"Collection failed: {str(e)[:300]}") from e
+    clear_answerers()
+    return info
+
+
+@app.post(
+    "/api/v1/runs/{run_id}/resume",
+    response_model=RunInfo,
+    tags=["runs"],
+    responses={**ADMIN, **WRITE, 404: {"model": ErrorBody, "description": "No checkpoint for that run"}},
+)
+def resume_run(
+    run_id: str = Path(pattern=r"^\d{8}T\d{6}-[0-9a-f]{6}$"),
+    store: Store = Depends(get_store),
+    user: User = Depends(require_admin),
+) -> RunInfo:
+    """Finish an interrupted run from its last checkpoint (e.g. a deploy restarted the server mid-run).
+
+    Completed steps are not repeated; embeddings are cached by content hash, so re-indexing
+    costs nothing. A run that already finished is returned as it is.
+    """
+    from .pipeline import resume
+
+    try:
+        info = resume(run_id, store=store, actor=user.email)
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from e
     clear_answerers()
     return info
 

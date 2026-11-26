@@ -165,6 +165,8 @@ def test_ai_ops_audit_metrics_and_graphs(client):
     assert any(k.startswith("collect.") for k in ops["spans"])
     assert {p["id"] for p in ops["prompts"]} >= {"sentiment", "rewrite", "ask", "plan"}
     assert ops["governance"]["model_allowed"] is True
+    rag = ops["rag"]  # offline seed has no embedder: chunks indexed, none embedded
+    assert rag["run_id"] and rag["chunks"] > 1000 and 0 <= rag["embedded"] <= rag["chunks"]
     actions = {e["action"] for e in client.get("/api/v1/admin/audit?limit=1000").json()}
     assert {"run.start", "run.done"} <= actions
     m = client.get("/metrics")
@@ -278,3 +280,12 @@ def test_405_lists_every_method_the_path_supports(client):
     r = client.delete("/api/v1/admin/profile")
     assert r.status_code == 405
     assert r.headers["allow"] == "GET, PUT"
+
+
+def test_resume_endpoint(client, anon, latest):
+    run_id = latest["info"].run_id
+    r = client.post(f"/api/v1/runs/{run_id}/resume")  # already finished: returned unchanged
+    assert r.status_code == 200 and r.json()["run_id"] == run_id
+    assert client.post("/api/v1/runs/20990101T000000-abcdef/resume").status_code == 404
+    assert client.post("/api/v1/runs/not-a-run/resume").status_code == 422
+    assert anon.post(f"/api/v1/runs/{run_id}/resume").status_code == 401

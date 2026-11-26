@@ -248,7 +248,12 @@ def build(answerer):
         q = state["question"]
         per = max(6 // len(state["plan"]), 2)
         merged, seen = [], set()
-        legs = "hybrid (BM25 + vectors)" if a.retriever.has_vectors else "lexical (BM25)"
+        if a.retriever.has_vectors:
+            legs = "hybrid (BM25 + vectors)"
+        elif a.embedder is None:
+            legs = "lexical (BM25): no embedding model available"
+        else:
+            legs = "lexical (BM25): this run has no stored vectors"
         for sub in state["plan"]:
             words = _aspect_words(sub["aspect"])
             query = without_brands(q) + " " + " ".join(words[:4])

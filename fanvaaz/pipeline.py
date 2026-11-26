@@ -122,5 +122,11 @@ def resume(
     profile_mod.set_active(profile_mod.Profile.model_validate(snap.values["profile"]))
     obs.new_trace(run_id)
     audit(store, actor, "run.resume", run_id, {"from": list(snap.next), "done": snap.values.get("completed")})
-    out = graph.invoke(None, cfg)
-    return RunInfo.model_validate(out["info"])
+    try:
+        out = graph.invoke(None, cfg)
+    except Exception as e:
+        audit(store, actor, "run.failed", run_id, {"error": str(e)[:300], "resumed": True})
+        raise
+    info = RunInfo.model_validate(out["info"])
+    audit(store, actor, "run.done", run_id, {"resumed": True, "rag": out.get("rag")})
+    return info

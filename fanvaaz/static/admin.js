@@ -88,6 +88,10 @@
       [o.tokens.estimate_error_pct == null ? "–" : `${o.tokens.estimate_error_pct}%`, "Token estimate error"],
       [String(o.calls.refused), "Refused by policy"],
     ];
+    if (o.rag && o.rag.run_id) {
+      facts.push([`${o.rag.embedded.toLocaleString("en-IN")} / ${o.rag.chunks.toLocaleString("en-IN")}`,
+        `Comments searchable by meaning (${o.rag.embed_model}, ${o.rag.embed_dims} dims)`]);
+    }
     $("aiops-facts").replaceChildren(...facts.map(([v, k]) => el("div", { class: "fact" }, el("div", { class: "v small" }, v), el("div", { class: "k" }, k))));
     $("aiops-nodes").replaceChildren(...Object.entries(o.by_node).map(([n, d]) => el("tr", {},
       el("td", {}, n), el("td", { class: "num" }, String(d.calls)), el("td", { class: "num" }, String(d.cached)),
