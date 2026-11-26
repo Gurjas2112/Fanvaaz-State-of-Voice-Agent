@@ -80,8 +80,9 @@
 
     <section id="ask" class="panel" aria-labelledby="ask-title">
       <h2 id="ask-title">Ask the data</h2>
-      <p class="sub">Questions about brands, keywords, complaints or praise. Answers quote viewers, cite the comments they use and
-        only use numbers from the data. Follow-ups remember the conversation ("and Samsung?").</p>
+      <p class="sub">Ask anything about the brands, the conversation or the category. Answers about the data quote viewers, cite
+        the comments they use, only use numbers from the data and are checked sentence by sentence. Follow-ups remember the
+        conversation ("and Samsung?").</p>
       <div class="suggest" id="ask-suggest" data-testid="ask-suggest"></div>
       <form id="ask-form" class="ask">
         <label class="visually-hidden" for="ask-input">Question</label>
@@ -90,8 +91,16 @@
         <button class="btn ghost small" type="button" id="ask-new" data-testid="ask-new" hidden>New conversation</button>
       </form>
       <ol id="ask-thread" class="thread" data-testid="ask-thread"></ol>
+      <ol id="ask-progress" class="progress" data-testid="ask-progress" aria-live="polite" hidden></ol>
       <div id="ask-answer" class="answer" data-testid="ask-answer" aria-live="polite"></div>
       <p id="ask-badges" class="badges" data-testid="ask-badges"></p>
+      <div id="ask-actions" class="ask-actions" data-testid="ask-actions" hidden>
+        <button class="btn ghost small" type="button" id="ask-up" data-testid="ask-up" aria-label="Helpful">👍 Helpful</button>
+        <button class="btn ghost small" type="button" id="ask-down" data-testid="ask-down" aria-label="Not helpful">👎 Not helpful</button>
+        <button class="btn ghost small" type="button" id="ask-regen" data-testid="ask-regen">Regenerate</button>
+        <span id="ask-thanks" class="muted" data-testid="ask-thanks"></span>
+      </div>
+      <div id="ask-followups" class="suggest" data-testid="ask-followups"></div>
       <ul id="ask-sources" class="sources" data-testid="ask-sources"></ul>
       <details id="ask-reasoning" class="reasoning" data-testid="ask-reasoning" hidden>
         <summary>How this answer was built</summary>

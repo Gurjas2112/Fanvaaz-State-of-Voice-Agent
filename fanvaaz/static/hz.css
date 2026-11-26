@@ -157,8 +157,16 @@ p { margin: 0; }
 .ask { display: flex; gap: 10px; }
 .ask input { flex: 1; min-width: 0; font: 400 17px var(--body); padding: 13px 16px; border: 2px solid var(--line); border-radius: 999px; }
 .ask input:focus { border-color: var(--breeze); outline: none; }
-.answer { margin-top: 16px; line-height: 1.6; max-width: 80ch; white-space: pre-wrap; }
+.answer { margin-top: 16px; line-height: 1.6; max-width: 80ch; }
+.answer p { margin: 0 0 8px; }
+.answer ul { margin: 0 0 8px; padding-left: 1.2em; }
+.answer li { margin: 2px 0; }
 .answer.refused { color: var(--chilli); }
+.progress { list-style: none; padding: 0; margin: 14px 0 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--muted, #5b6474); }
+.progress li::before { content: "✓ "; color: var(--teal, #1b9e8f); }
+.progress li:last-child::before { content: "… "; }
+.ask-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+#ask-followups { margin-top: 12px; }
 .sources { color: var(--ink-soft); font-size: 15px; padding-left: 20px; }
 .banner { background: #fff3d1; border-bottom: 1px solid #f0d27f; padding: 10px 0; font-size: 15px; }
 .foot { padding-top: 28px; padding-bottom: 48px; color: var(--ink-soft); font-size: 15px; }

@@ -160,46 +160,156 @@
     }));
   }
 
+  // A safe subset of Markdown: "- " lists and **bold**, built as DOM nodes (never innerHTML).
+  function renderAnswer(box, text) {
+    const inline = (line) => line.split(/(\*\*[^*]+\*\*)/).filter(Boolean)
+      .map((part) => (part.startsWith("**") && part.endsWith("**") ? el("strong", {}, part.slice(2, -2)) : part));
+    const nodes = [];
+    let list = null;
+    for (const raw of text.split(/\n+/)) {
+      const line = raw.trim();
+      if (!line) continue;
+      if (/^[-*•]\s+/.test(line)) {
+        if (!list) { list = el("ul", {}); nodes.push(list); }
+        list.append(el("li", {}, ...inline(line.replace(/^[-*•]\s+/, ""))));
+      } else {
+        list = null;
+        nodes.push(el("p", {}, ...inline(line)));
+      }
+    }
+    box.replaceChildren(...nodes);
+  }
+
+  // POST /api/v1/ask/stream and call onStep for each agent step; resolves with the final result.
+  async function askStream(body, onStep) {
+    const r = await fetch("/api/v1/ask/stream", {
+      method: "POST", credentials: "same-origin",
+      headers: { "X-Requested-With": "fanvaaz", "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    if (r.status === 401) { location.href = "/login?next=/app"; throw new Error("Signed out"); }
+    if (!r.ok || !r.body) {
+      let msg = `Request failed (${r.status})`;
+      try { const j = await r.json(); msg = typeof j.detail === "string" ? j.detail : msg; } catch { /* not JSON */ }
+      throw new Error(msg);
+    }
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "", result = null;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let cut;
+      while ((cut = buf.indexOf("\n\n")) >= 0) {
+        const block = buf.slice(0, cut);
+        buf = buf.slice(cut + 2);
+        const kind = (block.match(/^event: (.+)$/m) || [])[1];
+        const data = (block.match(/^data: (.*)$/m) || [])[1];
+        if (!kind || data === undefined) continue;
+        const payload = JSON.parse(data);
+        if (kind === "step") onStep(payload);
+        else if (kind === "result") result = payload;
+        else if (kind === "error") throw new Error(payload.detail || "Something went wrong");
+      }
+    }
+    if (!result) throw new Error("The answer stream ended early. Try again.");
+    return result;
+  }
+
+  const STEP_LABEL = { guard: "Checking the question", route: "Choosing how to answer", recall: "Reading the conversation",
+    plan: "Planning", agent: "Looking up the data", stats: "Computing the numbers", cache: "Checking earlier answers",
+    retrieve: "Finding comments", context: "Selecting evidence", answer: "Writing the answer", verify: "Checking numbers and citations",
+    judge: "Checking each claim", help: "Explaining", general: "Answering from general knowledge" };
+
+  let LAST = null;
+
+  function showAnswer(q, data) {
+    const out = $("ask-answer");
+    renderAnswer(out, data.answer);
+    out.className = "answer" + (data.refused ? " refused" : "");
+    out.dataset.refused = String(data.refused);
+    out.dataset.mode = data.mode;
+    out.dataset.route = data.route || "";
+    const badges = [{ llm: "Gemini, checked", guard: data.route === "off_topic" ? "Outside what I can answer" : "Refused by the guardrail",
+      general: "General knowledge, not from your data", help: "About Fanvaaz" }[data.mode] || "From the data"];
+    if (data.faithfulness != null) badges.push(`claims supported: ${Math.round(100 * data.faithfulness)}%`);
+    if (data.cache && data.cache.hit) badges.push(`cached (similarity ${data.cache.similarity})`);
+    if (data.scope && data.scope.brands) badges.push(`scope: ${data.scope.brands.join(", ")}` + (data.scope.aspect ? ` · ${data.scope.aspect}` : ""));
+    if (data.fallback_reason) badges.push(`LLM answer rejected: ${data.fallback_reason}`);
+    $("ask-badges").replaceChildren(...badges.map((b) => el("span", { class: "badge" }, b)));
+    $("ask-sources").replaceChildren(...data.sources.slice(0, 6).map((s) =>
+      el("li", { "data-testid": "ask-source" }, el("span", { class: "cid" }, s.citation || ""), " ",
+        el("a", { href: `https://www.youtube.com/watch?v=${s.video_id}&lc=${s.comment_id}`, target: "_blank", rel: "noopener" }, s.text))));
+    $("ask-steps").replaceChildren(...(data.reasoning_steps || []).map((s) => el("li", {}, s)));
+    $("ask-reasoning").hidden = !(data.reasoning_steps || []).length;
+    $("ask-followups").replaceChildren(...(data.follow_ups || []).map((f) => el("button", { type: "button", class: "pill", "data-testid": "follow-up",
+      onclick: () => { $("ask-input").value = f; $("ask-form").requestSubmit(); } }, f)));
+    $("ask-actions").hidden = !!data.refused;
+    $("ask-up").disabled = $("ask-down").disabled = false;
+    $("ask-thanks").textContent = "";
+    LAST = { q, data };
+  }
+
+  async function run(q, fresh) {
+    const out = $("ask-answer");
+    const prog = $("ask-progress");
+    out.textContent = "Looking through the comments…";
+    out.className = "answer";
+    $("ask-actions").hidden = true;
+    $("ask-followups").replaceChildren();
+    prog.replaceChildren();
+    prog.hidden = false;
+    const body = { question: q, ...(THREAD ? { thread_id: THREAD } : {}), ...(fresh ? { fresh: true } : {}) };
+    try {
+      const data = await askStream(body, (step) => {
+        const node = step.split(":")[0];
+        prog.append(el("li", { title: step }, STEP_LABEL[node] || node));
+      });
+      THREAD = data.thread_id;
+      $("ask-new").hidden = false;
+      showAnswer(q, data);
+      return true;
+    } catch (err) {
+      out.textContent = err.message;
+      return false;
+    } finally {
+      prog.hidden = true;
+    }
+  }
+
   async function ask(e) {
     e.preventDefault();
     const q = $("ask-input").value.trim();
     if (!q) return;
-    const out = $("ask-answer");
-    out.textContent = "Looking through the comments…";
-    out.className = "answer";
-    try {
-      const body = THREAD ? { question: q, thread_id: THREAD } : { question: q };
-      const data = await api("/api/v1/ask", { method: "POST", body: JSON.stringify(body) });
-      THREAD = data.thread_id;
-      $("ask-new").hidden = false;
+    if (await run(q, false)) {
       $("ask-thread").append(el("li", { class: "turn" }, q));
       $("ask-input").value = "";
-      out.textContent = data.answer;
-      out.className = "answer" + (data.refused ? " refused" : "");
-      out.dataset.refused = String(data.refused);
-      out.dataset.mode = data.mode;
-      const badges = [data.mode === "llm" ? "Gemini, checked" : data.mode === "guard" ? "Refused by the guardrail" : "From the data"];
-      if (data.cache && data.cache.hit) badges.push(`cached (similarity ${data.cache.similarity})`);
-      if (data.scope && data.scope.brands) badges.push(`scope: ${data.scope.brands.join(", ")}` + (data.scope.aspect ? ` · ${data.scope.aspect}` : ""));
-      if (data.fallback_reason) badges.push(`LLM answer rejected: ${data.fallback_reason}`);
-      $("ask-badges").replaceChildren(...badges.map((b) => el("span", { class: "badge" }, b)));
-      $("ask-sources").replaceChildren(...data.sources.slice(0, 6).map((s) =>
-        el("li", { "data-testid": "ask-source" }, el("span", { class: "cid" }, s.citation || ""), " ",
-          el("a", { href: `https://www.youtube.com/watch?v=${s.video_id}&lc=${s.comment_id}`, target: "_blank", rel: "noopener" }, s.text))));
-      $("ask-steps").replaceChildren(...(data.reasoning_steps || []).map((s) => el("li", {}, s)));
-      $("ask-reasoning").hidden = !(data.reasoning_steps || []).length;
+    }
+  }
+
+  async function feedback(rating) {
+    if (!LAST || !LAST.data.trace_id) return;
+    $("ask-up").disabled = $("ask-down").disabled = true;
+    try {
+      await api("/api/v1/ask/feedback", { method: "POST", body: JSON.stringify({ trace_id: LAST.data.trace_id, rating,
+        question: LAST.q, answer: LAST.data.answer.slice(0, 4000), mode: LAST.data.mode, route: LAST.data.route || "" }) });
+      $("ask-thanks").textContent = rating > 0 ? "Thanks, noted." : "Thanks. This answer is kept for review.";
     } catch (err) {
-      out.textContent = err.message;
+      $("ask-thanks").textContent = err.message;
+      $("ask-up").disabled = $("ask-down").disabled = false;
     }
   }
 
   function newConversation() {
     if (THREAD) api(`/api/v1/ask/threads/${THREAD}`, { method: "DELETE" }).catch(() => {});
     THREAD = null;
+    LAST = null;
     $("ask-thread").replaceChildren();
     $("ask-answer").textContent = "";
     $("ask-badges").replaceChildren();
     $("ask-sources").replaceChildren();
+    $("ask-followups").replaceChildren();
+    $("ask-actions").hidden = true;
     $("ask-reasoning").hidden = true;
     $("ask-new").hidden = true;
   }
@@ -218,6 +328,9 @@
     $("signout").addEventListener("click", HZ.signOut);
     $("ask-form").addEventListener("submit", ask);
     $("ask-new").addEventListener("click", newConversation);
+    $("ask-up").addEventListener("click", () => feedback(1));
+    $("ask-down").addEventListener("click", () => feedback(-1));
+    $("ask-regen").addEventListener("click", () => { if (LAST) run(LAST.q, true); });
     try {
       await loadMe();
       const setup = await checkSetup();

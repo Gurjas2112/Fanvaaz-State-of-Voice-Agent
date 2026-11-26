@@ -196,6 +196,25 @@ def test_ask_answers_and_refuses_injection(page, server_url, analyst):
     expect(page.get_by_test_id("ask-answer")).to_have_attribute("data-refused", "true")
 
 
+def test_ask_streams_progress_follow_ups_help_and_feedback(page, server_url, analyst):
+    sign_in(page, server_url, analyst, ANALYST_PW)
+    page.get_by_test_id("ask-input").fill("What do people say about OnePlus battery?")
+    page.get_by_test_id("ask-submit").click()
+    expect(page.get_by_test_id("ask-answer")).to_have_attribute("data-route", "data")
+    expect(page.get_by_test_id("follow-up").first).to_be_visible()
+    page.get_by_test_id("ask-up").click()
+    expect(page.get_by_test_id("ask-thanks")).to_contain_text("Thanks")
+    # a suggested follow-up is a one-click question that reuses the conversation
+    page.get_by_test_id("follow-up").first.click()
+    expect(page.get_by_test_id("ask-thread").locator("li")).to_have_count(2)
+    page.get_by_test_id("ask-input").fill("How is share of voice calculated?")
+    page.get_by_test_id("ask-submit").click()
+    expect(page.get_by_test_id("ask-answer")).to_have_attribute("data-mode", "help")
+    expect(page.get_by_test_id("ask-badges")).to_contain_text("About Fanvaaz")
+    page.get_by_test_id("ask-regen").click()
+    expect(page.get_by_test_id("ask-answer")).to_contain_text("log2")
+
+
 def test_comment_text_never_runs_as_html(page, server_url, analyst):
     sign_in(page, server_url, analyst, ANALYST_PW)
     assert page.locator("#inbox script, #inbox img, #recs script, #ask-sources script").count() == 0

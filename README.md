@@ -124,10 +124,26 @@ flowchart LR
 ```mermaid
 flowchart LR
   guard -->|refused| respond
-  guard --> recall --> plan --> stats --> cache
+  guard --> route
+  route -->|app| help --> respond
+  route -->|general| general --> respond
+  route -->|off_topic| respond
+  route -->|data| recall --> plan --> agent --> stats --> cache
   cache -->|verified hit| respond
-  cache --> retrieve --> context --> answer --> verify --> remember --> respond
+  cache --> retrieve --> context --> answer --> verify --> judge --> remember --> respond
 ```
+
+Ask takes any question, the way a general assistant does, but keeps every claim about the data checkable:
+
+| Step | What it does |
+| --- | --- |
+| **route** | Rules first (a brand named, data words, "how is SoV calculated"). The Gemini router decides only when the rules can't, choosing *data*, *app help*, *general category knowledge* or *out of scope*. Without a model, behaviour is unchanged. |
+| **agent** | For rankings, trends, videos, risks and multi-brand questions, Gemini calls eight read-only tools ([`tools.py`](fanvaaz/tools.py)). Their outputs are the only numbers the answer may use, and bad tool names or arguments come back as messages, never errors. |
+| **verify, then judge** | Numbers are grounded and citations resolved. Then a claim judge checks each sentence against the data: unsupported sentences are removed, and an answer that is mostly unsupported falls back to the extractive answer. The share of supported sentences is returned as `faithfulness`. |
+| **general / help** | Category knowledge is labelled *"General knowledge, not from your data"* and carries no citations. Questions about the app get fixed, accurate help text. |
+| **UX** | Streamed progress (`POST /api/v1/ask/stream`, server-sent events), suggested follow-ups, 👍/👎 feedback stored as evaluation data and summarised in AI Ops, and *Regenerate* (skips the answer cache). |
+
+An open-question set ([`ask_open.jsonl`](tests/golden/ask_open.jsonl), 35 questions across the four routes) gates routing offline. With Gemini (`pytest -m llm`) it also measures route accuracy, decline precision and mean faithfulness.
 
 ### The Share of Voice metric
 

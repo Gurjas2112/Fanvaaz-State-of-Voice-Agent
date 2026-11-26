@@ -37,10 +37,10 @@ def bound(seeded_store):
 # ---- prompts and schemas -----------------------------------------------------------
 def test_prompt_registry_versions_and_hashes():
     p = prompts.get("ask", focus="OnePlus", category="smartphones")
-    assert p.version == "2.0" and len(p.sha) == 12 and "{focus}" not in p.system and "OnePlus" in p.system
+    assert p.version == "2.1" and len(p.sha) == 12 and "{focus}" not in p.system and "OnePlus" in p.system
     assert prompts.get("ask", focus="X", category="y").sha != p.sha  # the hash is of the exact text
     ids = {c["id"] for c in prompts.catalog()}
-    assert ids == {"sentiment", "rewrite", "ask", "plan"}
+    assert ids == {"sentiment", "rewrite", "ask", "plan", "route", "agent", "judge", "general"}
 
 
 def test_json_schema_is_inlined_for_providers():

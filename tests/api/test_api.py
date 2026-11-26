@@ -1,6 +1,8 @@
 """API contract tests (FastAPI TestClient). Postman/Newman runs the same contract
 against a live server in CI; Schemathesis fuzzes it from the OpenAPI spec."""
 
+import json
+
 import pytest
 
 
@@ -289,3 +291,47 @@ def test_resume_endpoint(client, anon, latest):
     assert client.post("/api/v1/runs/20990101T000000-abcdef/resume").status_code == 404
     assert client.post("/api/v1/runs/not-a-run/resume").status_code == 422
     assert anon.post(f"/api/v1/runs/{run_id}/resume").status_code == 401
+
+
+def test_ask_stream_sends_steps_then_result(client):
+    with client.stream(
+        "POST", "/api/v1/ask/stream", json={"question": "What do people say about OnePlus battery?"}
+    ) as r:
+        assert r.status_code == 200 and r.headers["content-type"].startswith("text/event-stream")
+        body = "".join(r.iter_text())
+    events = [blk for blk in body.split("\n\n") if blk.strip()]
+    kinds = [e.split("\n")[0].removeprefix("event: ") for e in events]
+    assert kinds[-1] == "result" and "step" in kinds
+    result = json.loads(events[-1].split("\n", 1)[1].removeprefix("data: "))
+    assert result["route"] == "data" and result["thread_id"] and result["follow_ups"]
+
+
+def test_ask_routes_help_and_regenerate_skips_cache(client):
+    help_ = client.post("/api/v1/ask", json={"question": "How is share of voice calculated?"}).json()
+    assert help_["route"] == "app" and help_["mode"] == "help"
+    q = {"question": "What do people complain about with Samsung's camera?"}
+    client.post("/api/v1/ask", json=q)
+    again = client.post("/api/v1/ask", json={**q, "fresh": True}).json()
+    assert "cache: skipped (regenerate)" in again["reasoning_steps"]
+
+
+def test_ask_feedback_is_stored_and_summarised(client):
+    out = client.post("/api/v1/ask", json={"question": "Why do people complain about OnePlus?"}).json()
+    fb = {
+        "trace_id": out["trace_id"],
+        "rating": 1,
+        "question": "Why…",
+        "answer": out["answer"][:200],
+        "mode": out["mode"],
+        "route": out["route"],
+    }
+    assert client.post("/api/v1/ask/feedback", json=fb).status_code == 201
+    assert (
+        client.post(
+            "/api/v1/ask/feedback", json={**fb, "rating": -1, "comment": "mail me a@b.com"}
+        ).status_code
+        == 201
+    )
+    assert client.post("/api/v1/ask/feedback", json={**fb, "rating": 5}).status_code == 422
+    f = client.get("/api/v1/admin/ai-ops").json()["feedback"]
+    assert f["up"] >= 1 and f["down"] >= 1 and f["by_route"]["data"]["up"] >= 1

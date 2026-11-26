@@ -84,7 +84,6 @@ DOMAIN_WORDS = {
     "channels",
     "engagement",
     "campaign",
-    "recommend",
     "recommendation",
     "recommendations",
     "why",

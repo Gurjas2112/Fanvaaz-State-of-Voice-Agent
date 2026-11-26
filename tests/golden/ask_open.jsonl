@@ -1,0 +1,35 @@
+{"q": "Why do people complain about OnePlus?", "route": "data"}
+{"q": "What do viewers praise about Samsung's camera?", "route": "data"}
+{"q": "OnePlus vs Samsung on battery", "route": "data"}
+{"q": "Which brand leads the conversation overall?", "route": "data"}
+{"q": "Which videos mention OnePlus the most?", "route": "data"}
+{"q": "Has OnePlus's share of voice changed since the last run?", "route": "data"}
+{"q": "What are the open risks for OnePlus?", "route": "data"}
+{"q": "What should our content team focus on next?", "route": "data"}
+{"q": "How is Pixel perceived on software updates?", "route": "data"}
+{"q": "Which brand has the most negative mentions?", "route": "data"}
+{"q": "What do people say about Xiaomi's price?", "route": "data"}
+{"q": "Summarise the sentiment for phone comparison review videos", "route": "data"}
+{"q": "Which competitor is closest to OnePlus?", "route": "data"}
+{"q": "What do buyers say about Apple's service?", "route": "data"}
+{"q": "Is Motorola discussed for its display?", "route": "data"}
+{"q": "What are the top complaints about Vivo?", "route": "data"}
+{"q": "How is share of voice calculated?", "route": "app"}
+{"q": "What does the risk radar mean?", "route": "app"}
+{"q": "What is share of voice?", "route": "app"}
+{"q": "How do citations work in Fanvaaz?", "route": "app"}
+{"q": "help", "route": "app"}
+{"q": "What is a 120Hz display?", "route": "general"}
+{"q": "What does an IP68 rating mean?", "route": "general"}
+{"q": "What is the difference between AMOLED and LCD?", "route": "general"}
+{"q": "Explain what a periscope zoom lens is", "route": "general"}
+{"q": "What is fast charging in phones?", "route": "general"}
+{"q": "What does 5G mean for a smartphone?", "route": "general"}
+{"q": "What is the capital of France?", "route": "off_topic"}
+{"q": "Write me a poem about the moon", "route": "off_topic"}
+{"q": "Solve 2x + 3 = 7", "route": "off_topic"}
+{"q": "Translate hello into French", "route": "off_topic"}
+{"q": "Who won the cricket match yesterday?", "route": "off_topic"}
+{"q": "Recommend a good laptop for coding", "route": "off_topic"}
+{"q": "What is the weather in Pune?", "route": "off_topic"}
+{"q": "Tell me a joke", "route": "off_topic"}

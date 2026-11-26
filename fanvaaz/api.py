@@ -11,20 +11,29 @@ Docs    /docs (OpenAPI; admin-only when FANVAAZ_PUBLIC_DOCS=false). Postman, Sch
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import csv
 import io
+import json
 import logging
 import threading
 import time
 import uuid
 from collections import deque
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path as FilePath
 from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -35,6 +44,7 @@ from .auth import COOKIE, CSRF_HEADER, CSRF_VALUE, EMAIL_PATTERN, Accounts, Auth
 from .brief import build_brief
 from .evidence import pack as evidence_pack
 from .governance import Governance, audit, audit_log
+from .guardrails import safe_output
 from .memory import Memory, user_key
 from .models import KeywordReport, RunInfo
 from .pipeline import new_run_id
@@ -321,6 +331,17 @@ class AskRequest(StrictIn):
         min_length=1, max_length=1000, examples=["Why do people complain about the battery?"]
     )
     thread_id: str | None = Field(default=None, pattern=THREAD, description="Continue a conversation")
+    fresh: bool = Field(default=False, description="Skip the answer cache (regenerate)")
+
+
+class FeedbackIn(StrictIn):
+    trace_id: str = Field(pattern=r"^[a-f0-9]{16}$")
+    rating: Literal[1, -1]
+    question: str = Field(min_length=1, max_length=1000)
+    answer: str = Field(min_length=1, max_length=4000)
+    mode: str = Field(default="", max_length=20)
+    route: str = Field(default="", max_length=20)
+    comment: str = Field(default="", max_length=500)
 
 
 class Source(BaseModel):
@@ -340,7 +361,13 @@ class AskResponse(BaseModel):
     answer: str
     refused: bool
     reasons: list[str]
-    mode: Literal["guard", "extractive", "llm"]
+    mode: Literal["guard", "extractive", "llm", "general", "help"]
+    route: Literal["data", "app", "general", "off_topic", "guard"] = "data"
+    follow_ups: list[str] = Field(default_factory=list)
+    faithfulness: float | None = Field(
+        default=None, description="Share of sentences the judge found supported"
+    )
+    removed_claims: list[str] = Field(default_factory=list)
     sources: list[Source]
     citations: list[str] = Field(default_factory=list)
     scope: dict[str, Any] | None = None
@@ -801,9 +828,76 @@ def ask(
     """Grounded answer with citations, reasoning steps, memory (pass `thread_id` back) and cache info."""
     obs.new_trace(info.run_id)
     thread = body.thread_id or uuid.uuid4().hex[:16]
-    out = answerer_for(info, store).answer(body.question, user_key=user_key(user.id), thread_id=thread)
+    out = answerer_for(info, store).answer(
+        body.question, user_key=user_key(user.id), thread_id=thread, fresh=body.fresh
+    )
     out["thread_id"] = thread
     return out
+
+
+@app.post(
+    "/api/v1/ask/stream",
+    tags=["ask"],
+    responses={**NO_DATA, **WRITE, 429: {"model": ErrorBody, "description": "Rate limited"}},
+    response_class=StreamingResponse,
+)
+def ask_stream(
+    body: AskRequest,
+    info: RunInfo = Depends(latest_or_404),
+    store: Store = Depends(get_store),
+    user: User = Depends(ask_rate_limit),
+) -> StreamingResponse:
+    """Server-sent events: `step` events as the agent works, then one `result` (same body as /ask)."""
+    trace = obs.new_trace(info.run_id)
+    thread = body.thread_id or uuid.uuid4().hex[:16]
+    a = answerer_for(info, store)
+    ctx = contextvars.copy_context()  # the trace id must follow the generator into the server's thread
+
+    def events():
+        gen = a.stream(body.question, user_key=user_key(user.id), thread_id=thread, fresh=body.fresh)
+        while True:
+            try:
+                kind, payload = ctx.run(next, gen)
+            except StopIteration:
+                return
+            except Exception:  # noqa: BLE001 - report, never hang the client
+                log.exception("ask stream failed (trace %s)", trace)
+                yield "event: error\ndata: " + json.dumps({"detail": "Internal error"}) + "\n\n"
+                return
+            if kind == "result":
+                payload = {**payload, "thread_id": thread}
+                payload = AskResponse.model_validate(payload).model_dump()
+            yield f"event: {kind}\ndata: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/api/v1/ask/feedback", status_code=201, tags=["ask"], responses={**AUTH, **WRITE})
+def ask_feedback(
+    body: FeedbackIn, store: Store = Depends(get_store), user: User = Depends(current_user)
+) -> dict:
+    """Thumbs up/down on one answer; stored (PII-redacted) as evaluation data and summarised in AI Ops."""
+    with store._conn() as c:
+        c.execute(
+            "INSERT INTO ask_feedback (trace_id, user_key, rating, question, answer, mode, route, comment,"
+            " created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                body.trace_id,
+                user_key(user.id),
+                body.rating,
+                safe_output(body.question),
+                safe_output(body.answer),
+                body.mode,
+                body.route,
+                safe_output(body.comment),
+                datetime.now(UTC).isoformat(timespec="seconds"),
+            ),
+        )
+    return {"ok": True}
 
 
 @app.delete("/api/v1/ask/threads/{thread_id}", status_code=204, tags=["ask"], responses={**AUTH, **WRITE})
@@ -909,6 +1003,30 @@ def admin_ai_ops(
         "governance": Governance(get_settings(), store).summary(),
         "prompts": prompts.catalog(),
         "rag": _rag_index_status(store),
+        "feedback": _feedback_status(store, days),
+    }
+
+
+def _feedback_status(store: Store, days: int) -> dict:
+    """Thumbs up/down on answers in the window, overall and per route."""
+    since = (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec="seconds")
+    with store._conn() as c:
+        rows = c.execute(
+            "SELECT COALESCE(route, ''), rating, COUNT(*) FROM ask_feedback WHERE created_at >= ?"
+            " GROUP BY COALESCE(route, ''), rating",
+            (since,),
+        ).fetchall()
+    up = sum(n for _, r, n in rows if r == 1)
+    down = sum(n for _, r, n in rows if r == -1)
+    by_route: dict[str, dict] = {}
+    for route_, r, n in rows:
+        d = by_route.setdefault(route_ or "unknown", {"up": 0, "down": 0})
+        d["up" if r == 1 else "down"] += n
+    return {
+        "up": up,
+        "down": down,
+        "up_rate": round(up / (up + down), 3) if up + down else None,
+        "by_route": by_route,
     }
 
 

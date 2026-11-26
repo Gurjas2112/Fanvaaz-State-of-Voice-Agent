@@ -58,11 +58,46 @@ class PlanOut(_Out):
     steps: list[PlanStep] = Field(min_length=1, max_length=3)
 
 
+Route = Literal["data", "app", "general", "off_topic"]
+
+
+class RouteOut(_Out):
+    route: Route
+    reason: str = Field(default="", max_length=200)
+
+
+class ToolCall(_Out):
+    tool: str = Field(min_length=1, max_length=40)
+    args: dict = Field(default_factory=dict)
+
+
+class AgentOut(_Out):
+    calls: list[ToolCall] = Field(default_factory=list, max_length=4)
+    done: bool = False
+
+
+class ClaimCheck(_Out):
+    n: int = Field(ge=1, le=40)
+    supported: bool
+
+
+class JudgeOut(_Out):
+    claims: list[ClaimCheck] = Field(default_factory=list, max_length=40)
+
+
+class GeneralOut(_Out):
+    answer: str = Field(min_length=1, max_length=1500)
+
+
 REGISTRY: dict[str, type[BaseModel]] = {
     "SentimentBatchOut": SentimentBatchOut,
     "RewriteOut": RewriteOut,
     "AnswerOut": AnswerOut,
     "PlanOut": PlanOut,
+    "RouteOut": RouteOut,
+    "AgentOut": AgentOut,
+    "JudgeOut": JudgeOut,
+    "GeneralOut": GeneralOut,
 }
 
 

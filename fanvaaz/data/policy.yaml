@@ -20,6 +20,10 @@ llm_may:
   rewrite: reword rule-built insights without adding numbers or claims
   ask: answer questions from retrieved, PII-redacted evidence with citations
   plan: split a question into sub-questions over known brands and aspects
+  route: classify a question the rules could not place (data, app help, general category knowledge, out of scope)
+  agent: choose read-only data tools for a question; tool outputs are the only numbers an answer may use
+  judge: check each sentence of an answer against its data; unsupported sentences are removed
+  general: explain the product category from general knowledge, labelled as not from the data
 
 # Hard limits that no prompt, profile or user can relax.
 llm_may_not:
