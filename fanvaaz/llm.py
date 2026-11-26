@@ -84,15 +84,15 @@ class OpenAICompatLLM:
                 if r.status_code in RETRYABLE:
                     raise httpx.HTTPStatusError(f"retryable {r.status_code}", request=r.request, response=r)
                 if r.status_code in (401, 402, 403):
-                    try:
-                        detail = (r.json()[0] if isinstance(r.json(), list) else r.json())["error"]["message"]
-                    except Exception:  # noqa: BLE001
-                        detail = r.text[:200]
-                    self.circuit_open = f"{r.status_code} {detail.strip()[:200]}"
+                    self.circuit_open = f"{r.status_code} {_detail(r)}"
                     log.error(
                         "LLM provider refused (%s); LLM steps are off for this process", self.circuit_open
                     )
-                r.raise_for_status()
+                if r.status_code >= 400:
+                    # Keep the provider's own explanation: a bare "400 Bad Request" is undebuggable.
+                    raise httpx.HTTPStatusError(
+                        f"{r.status_code} from {url}: {_detail(r)}", request=r.request, response=r
+                    )
                 return r.json()
             except httpx.HTTPStatusError as e:
                 last_err = e
@@ -166,6 +166,8 @@ class OpenAICompatLLM:
         model = model or self.s.embed_model
         dims = dims or self.s.embed_dims
         out: list[list[float]] = []
+        # Gemini rejects a blank input with 400 for the whole batch, so blanks get a placeholder.
+        texts = [t[:8000] if t.strip() else "(empty)" for t in texts]
         for i in range(0, len(texts), 100):
             chunk = texts[i : i + 100]
             body: dict[str, Any] = {"model": model, "input": chunk}
@@ -176,6 +178,17 @@ class OpenAICompatLLM:
             for row in rows:
                 out.append(normalise(row["embedding"][:dims]))
         return out
+
+
+def _detail(r: httpx.Response) -> str:
+    """The provider's error message (OpenAI and Gemini shapes), else the start of the body."""
+    try:
+        body = r.json()
+        body = body[0] if isinstance(body, list) else body
+        msg = body["error"]["message"]
+    except Exception:  # noqa: BLE001
+        msg = r.text
+    return " ".join(str(msg).split())[:300]
 
 
 def normalise(v: list[float]) -> list[float]:

@@ -340,3 +340,49 @@ def test_old_sqlite_files_are_upgraded(tmp_path):
     with db.conn() as c:
         cols = {r[1] for r in c.execute("PRAGMA table_info(runs)").fetchall()}
     assert "profile" in cols and db.schema_version() >= 3
+
+
+# ---- embedding input hygiene (a blank comment made Gemini 400 the whole batch) ------
+def test_blank_comments_are_not_indexed_and_embed_never_sends_empty_input():
+    import httpx
+
+    from fanvaaz.config import Settings
+    from fanvaaz.llm import OpenAICompatLLM
+    from fanvaaz.models import Comment, Video
+    from fanvaaz.retrieval import chunks_from_videos
+
+    v = Video(video_id="v1", keyword="k", rank=1, title="t")
+    v.comments = [Comment(comment_id="a", text="   "), Comment(comment_id="b", text="great battery")]
+    chunks, _ = chunks_from_videos([v])
+    assert [c.doc_id for c in chunks] == ["b"]
+
+    sent = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        body = json.loads(req.content)
+        sent.append(body["input"])
+        if any(not t.strip() for t in body["input"]):
+            return httpx.Response(400, json={"error": {"message": "empty content"}})
+        return httpx.Response(
+            200, json={"data": [{"index": i, "embedding": [1.0, 0.0]} for i, _ in enumerate(body["input"])]}
+        )
+
+    s = Settings(llm_base_url="https://llm.test/v1", llm_api_key="k")
+    llm = OpenAICompatLLM(s, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    assert len(llm.embed(["", "ok"], dims=2)) == 2
+    assert all(t.strip() for t in sent[0])
+
+
+def test_provider_error_message_is_kept():
+    import httpx
+
+    from fanvaaz.config import Settings
+    from fanvaaz.llm import OpenAICompatLLM
+
+    def handler(req):
+        return httpx.Response(400, json={"error": {"message": "model not found for embedContent"}})
+
+    s = Settings(llm_base_url="https://llm.test/v1", llm_api_key="k")
+    llm = OpenAICompatLLM(s, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    with pytest.raises(httpx.HTTPStatusError, match="model not found"):
+        llm.embed(["x"])

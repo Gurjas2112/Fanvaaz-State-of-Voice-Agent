@@ -108,6 +108,8 @@ def chunks_from_videos(videos: list[Video]) -> tuple[list[Chunk], int]:
             if c.comment_id in seen:
                 continue
             seen.add(c.comment_id)
+            if not c.text.strip():  # nothing to retrieve, and embedding APIs reject empty input
+                continue
             if is_injection(c.text):
                 quarantined += 1
                 continue
