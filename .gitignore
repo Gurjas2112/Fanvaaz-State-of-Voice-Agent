@@ -41,3 +41,6 @@ mobile/android/local.properties
 .deepeval/
 
 mobile/android/keystore.properties
+
+# Local-only material (submission profiles, drafts): never committed
+docs/private/
