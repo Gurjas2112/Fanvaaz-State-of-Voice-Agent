@@ -85,9 +85,18 @@ _mcp_started = False
 async def lifespan(app: FastAPI):
     s = get_settings()
     obs.configure_logging(json_logs=s.log_json)
-    store = app.dependency_overrides.get(get_store, get_store)()
+    log.info("starting Fanvaaz %s (database: %s)", __version__, "postgres" if s.database_url else "sqlite")
+    try:
+        store = app.dependency_overrides.get(get_store, get_store)()
+    except Exception:
+        log.exception("STARTUP FAILED: cannot open or migrate the database (check FANVAAZ_DATABASE_URL)")
+        raise
     obs.bind(store)
-    get_accounts(store).ensure_admin()
+    log.info("database ready: %s, schema version %s", store.db.label, store.db.schema_version())
+    try:
+        get_accounts(store).ensure_admin()
+    except Exception:  # a weak admin password must not stop the service from starting
+        log.exception("first admin account was NOT created (check FANVAAZ_ADMIN_PASSWORD rules)")
     try:
         profile_mod.sync_from(store)
     except profile_mod.NoProfileError:
