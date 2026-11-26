@@ -37,7 +37,7 @@ collected with the YouTube Data API, PII-redacted and replayed through the full 
 | Tests | **233 passed** on SQLite, the same suite on **Postgres 16 + pgvector**, 1 live test against the YouTube API | `make test`, `make pg-test`, `pytest -m live` |
 | Brand-targeted sentiment, rules only, **real comments** | **macro-F1 0.73** (untouched holdout) | [`tests/golden/real_holdout.jsonl`](tests/golden/real_holdout.jsonl), hand-labelled |
 | Same, hand-written sentences | macro-F1 0.86 (holdout) | the gap is the point: synthetic sets flatter rules |
-| Retrieval ranking, 8 real questions | **MRR 0.84 vs 0.44**, recall@5 **0.73 vs 0.25** (re-ranked vs plain BM25) | [`tests/golden/test_retrieval.py`](tests/golden/test_retrieval.py) |
+| Retrieval ranking, 8 real questions, real Gemini embeddings | **MRR 0.94** hybrid (BM25 + pgvector, RRF, re-rank) vs 0.71 vector-only vs 0.44 BM25 | [`tests/golden/test_retrieval.py`](tests/golden/test_retrieval.py) |
 | Prompt-injection red team | **40/40 blocked, 0/30 benign refused** | [`tests/safety`](tests/safety) |
 | Real comments wrongly quarantined as injections | **0 / 3,555** (after fixing a false positive the real data exposed) | `reports/real_quarantine.json` |
 | Insights with grounded numbers and resolvable citations | **100%** of every run | `verify` node + evidence pack |
@@ -185,7 +185,8 @@ Production-like stack on Postgres + pgvector: `docker compose up --build`.
 | Sentiment, **real comments** | golden `real_holdout` (never tuned on) | macro-F1 ≥ 0.70 | **0.73** (real dev: 0.88) |
 | Sentiment, hand-written | golden `holdout` | macro-F1 ≥ 0.80 | **0.86** (dev: 0.99) |
 | Brand detection | golden `holdout` | F1 ≥ 0.95 | **1.00** |
-| Retrieval ranking | 8 real questions, pooled judgments | hybrid ≥ BM25, recall@5 ≥ 0.6 | **recall@5 0.73, P@5 0.68, MRR 0.84** (BM25: 0.25 / 0.23 / 0.44) |
+| Retrieval ranking, no vectors | 8 real questions, pooled judgments | hybrid ≥ BM25, recall@5 ≥ 0.6 | **recall@5 0.73, P@5 0.68, MRR 0.84** (BM25: 0.25 / 0.23 / 0.44) |
+| Retrieval ranking, with vectors | same questions, `gemini-embedding-001` at 768 dims over 3,431 real comments (`pytest -m llm`) | vector finds relevant, hybrid MRR ≥ BM25 | hybrid **recall@5 0.70, P@5 0.63, MRR 0.94**; vector-only 0.45 / 0.40 / 0.71; BM25 0.25 / 0.23 / 0.44 |
 | Red-team refusal | own corpus, 40 attacks / 30 benign | ≥ 95% blocked, ≤ 5% false refusals | **40/40, 0/30** |
 | Injection false positives on real data | 3,555 real comments | ≤ 0.2% | **0** |
 | LLM guard paths | fake LLMs that lie, leak PII, invent brands, return invalid JSON, hit 402 | rejected, repaired or circuit-broken | all pass |
@@ -311,9 +312,11 @@ ones are `YOUTUBE_API_KEY`, `DATABASE_URL`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_
 
 ## Limitations
 
-- The LLM-graded metrics (DeepEval, Ragas, the vector leg of retrieval) need a funded Gemini key. Without one,
-  Fanvaaz runs on rules and BM25, and this README reports only numbers that actually ran.
-- Golden sets are small and single-labeller; retrieval judgments are pooled.
+- The LLM-graded metrics (DeepEval, Ragas) need a funded Gemini key. Without one, Fanvaaz runs on rules and
+  BM25, and this README reports only numbers that actually ran.
+- Golden sets are small and single-labeller; retrieval judgments are pooled. The pool was judged before the
+  vector leg existed, so comments only vector search finds count as misses: vector scores are a lower bound.
+  On these 8 questions, adding vectors lifted MRR (0.84 → 0.94) but cost a little recall@5 (0.73 → 0.70).
 - Rule sentiment still reads "this phone is fire" (praise) literally; that case is a tracked `xfail`.
 - Rate limiting and login throttling are per instance.
 
