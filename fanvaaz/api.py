@@ -919,7 +919,11 @@ def create_run(
     try:
         info = run_pipeline(source=body.source, keywords=body.keywords, store=store, actor=user.email)
     except (RuntimeError, ValueError) as e:
+        log.warning("collection rejected (400): %s", e)
         raise HTTPException(400, str(e)) from e
+    except Exception as e:  # e.g. an unexpected YouTube HTTP error: log the reason, answer 502
+        log.exception("collection failed")
+        raise HTTPException(502, f"Collection failed: {str(e)[:300]}") from e
     clear_answerers()
     return info
 

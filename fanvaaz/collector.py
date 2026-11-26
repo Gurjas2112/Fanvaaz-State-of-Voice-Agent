@@ -36,6 +36,10 @@ class QuotaExceeded(RuntimeError):
     pass
 
 
+class YouTubeKeyError(RuntimeError):
+    """The key is wrong, revoked, restricted to another API, or its project lacks the API."""
+
+
 class YouTubeCollector:
     def __init__(
         self,
@@ -61,6 +65,20 @@ class YouTubeCollector:
             if r.status_code in (429, 500, 503):
                 time.sleep(2**attempt)
                 continue
+            if r.status_code in (400, 401, 403) and endpoint != "commentThreads":
+                # A key problem stops the whole run: say exactly what YouTube said and what to check.
+                try:
+                    msg = r.json()["error"]["message"]
+                except Exception:  # noqa: BLE001
+                    msg = r.text[:200]
+                raise YouTubeKeyError(
+                    f"YouTube API refused the request ({r.status_code}: {msg}). Check that FANVAAZ_YOUTUBE_API_KEY "
+                    "is current, that YouTube Data API v3 is enabled in the key's project, and that the key's "
+                    "API restrictions allow it."
+                )
+            if r.status_code == 403 and endpoint == "commentThreads":
+                log.warning("comments unavailable for one video (%s); skipping it", r.status_code)
+                return {"items": []}
             r.raise_for_status()
             self.units += COST[endpoint]
             data = r.json()

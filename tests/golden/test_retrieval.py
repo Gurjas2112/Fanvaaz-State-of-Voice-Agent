@@ -31,8 +31,11 @@ def _metrics(ranked: list[list[str]], relevant: list[set[str]]) -> dict:
         precisions.append(len(rel & set(top)) / K)
         rrs.append(next((1 / i for i, cid in enumerate(top, 1) if cid in rel), 0.0))
     n = len(ranked)
-    return {f"recall@{K}": round(sum(recalls) / n, 3), f"precision@{K}": round(sum(precisions) / n, 3),
-            "mrr": round(sum(rrs) / n, 3)}
+    return {
+        f"recall@{K}": round(sum(recalls) / n, 3),
+        f"precision@{K}": round(sum(precisions) / n, 3),
+        "mrr": round(sum(rrs) / n, 3),
+    }
 
 
 @pytest.mark.golden
@@ -43,14 +46,32 @@ def test_reranked_retrieval_beats_plain_bm25(latest, reports_dir):
     plain, full = [], []
     for r in rows:
         words = aspect_words(r["aspect"])
-        plain.append([h.chunk.doc_id for h in a.retriever.search(r["question"], k=K, must_brand=r["brand"],
-                                                                  mode="lexical")])
+        plain.append(
+            [
+                h.chunk.doc_id
+                for h in a.retriever.search(r["question"], k=K, must_brand=r["brand"], mode="lexical")
+            ]
+        )
         query = without_brands(r["question"]) + " " + " ".join(words[:4])
-        full.append([h.chunk.doc_id for h in a.retriever.search(
-            query, k=K, must_brand=r["brand"], aspect_words=words,
-            want_sentiment=intent_of(r["question"]), sentiment_of=a.sentiment_of)])
-    report = {"questions": len(rows), "k": K, "bm25": _metrics(plain, relevant),
-              "hybrid_reranked": _metrics(full, relevant)}
+        full.append(
+            [
+                h.chunk.doc_id
+                for h in a.retriever.search(
+                    query,
+                    k=K,
+                    must_brand=r["brand"],
+                    aspect_words=words,
+                    want_sentiment=intent_of(r["question"]),
+                    sentiment_of=a.sentiment_of,
+                )
+            ]
+        )
+    report = {
+        "questions": len(rows),
+        "k": K,
+        "bm25": _metrics(plain, relevant),
+        "hybrid_reranked": _metrics(full, relevant),
+    }
     (reports_dir / "retrieval.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     assert report["hybrid_reranked"]["mrr"] >= report["bm25"]["mrr"]
     assert report["hybrid_reranked"][f"precision@{K}"] >= report["bm25"][f"precision@{K}"]

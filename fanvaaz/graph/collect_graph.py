@@ -33,7 +33,7 @@ from .. import insights as insights_mod
 from .. import obs, retrieval
 from .. import profile as profile_mod
 from .. import risk as risk_mod
-from ..collector import QuotaExceeded, YouTubeCollector, load_snapshot
+from ..collector import QuotaExceeded, YouTubeCollector, YouTubeKeyError, load_snapshot
 from ..config import Settings
 from ..extract import extract_video, llm_relabel, source_texts
 from ..llm import LLM
@@ -197,7 +197,9 @@ def build(settings: Settings, store, llm: LLM | None, embedder=None, progress=No
         return "rewrite" if llm is not None else "evidence"
 
     network = RetryPolicy(
-        max_attempts=3, initial_interval=2.0, retry_on=lambda e: not isinstance(e, QuotaExceeded)
+        max_attempts=3,
+        initial_interval=2.0,
+        retry_on=lambda e: not isinstance(e, (QuotaExceeded, YouTubeKeyError)),
     )
     g = StateGraph(CollectState)
     g.add_node("collect", collect, retry_policy=network)

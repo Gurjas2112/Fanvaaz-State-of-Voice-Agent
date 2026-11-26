@@ -97,3 +97,22 @@ def test_quota_exceeded_is_raised(tmp_path):
 def test_missing_key_fails_fast():
     with pytest.raises(RuntimeError):
         YouTubeCollector(Settings(youtube_api_key=None))
+
+
+def test_a_refused_key_stops_the_run_with_a_clear_reason():
+    """Found on the live deploy: a restricted key returned 403 'Permission denied on the service'."""
+    import httpx
+    import pytest
+
+    from fanvaaz.collector import YouTubeCollector, YouTubeKeyError
+    from fanvaaz.config import get_settings
+
+    def handler(request):
+        return httpx.Response(
+            403, json={"error": {"code": 403, "message": "Permission denied on the service."}}
+        )
+
+    s = get_settings().model_copy(update={"youtube_api_key": "k", "save_raw": False})
+    col = YouTubeCollector(s, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    with pytest.raises(YouTubeKeyError, match="Permission denied on the service"):
+        col.search("phones")
