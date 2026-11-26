@@ -66,6 +66,17 @@ put_secret() {  # name, prompt, [env var holding the value]
     echo "  The admin password must be at least 12 characters (you typed ${#value}). Run the script again." >&2
     exit 1
   fi
+  if [[ "$name" == "fanvaaz-youtube-api-key" && -n "$value" ]]; then
+    # Hidden prompts swallow pasted lines: refuse anything that is not a working YouTube key.
+    if [[ "$value" =~ [[:space:]] ]]; then
+      echo "  That is not an API key (it contains spaces; a pasted command?). Nothing was stored." >&2; exit 1
+    fi
+    yt_check="$(curl -s "https://www.googleapis.com/youtube/v3/videos?part=id&id=dQw4w9WgXcQ&key=$value" |
+      python3 -c "import sys,json;d=json.load(sys.stdin);print('ok' if 'items' in d else d.get('error',{}).get('message','?'))")"
+    if [[ "$yt_check" != "ok" ]]; then
+      echo "  YouTube refused that key ($yt_check). Nothing was stored." >&2; exit 1
+    fi
+  fi
   if [[ -n "$value" ]]; then
     printf '%s' "$value" | gcloud secrets versions add "$name" --data-file=- >/dev/null
   elif ! gcloud secrets versions list "$name" --filter=state=enabled --format='value(name)' | grep -q .; then

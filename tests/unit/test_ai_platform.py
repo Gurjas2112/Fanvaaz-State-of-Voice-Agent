@@ -440,3 +440,20 @@ def test_relabel_batches_run_in_parallel_and_apply_to_the_right_mentions():
     out = llm_relabel(mentions, texts, EchoLLM(), batch_size=10, only_uncertain=True, workers=4)
     assert all(m.sentiment == ("positive" if int(m.source_id) % 2 else "negative") for m in out)
     assert len(threads) > 1
+
+
+def test_logs_never_carry_api_keys_or_bearer_tokens(capsys):
+    import logging
+
+    obs.configure_logging()
+    try:
+        logging.getLogger("fanvaaz.test").info(
+            "GET https://www.googleapis.com/youtube/v3/search?q=x&key=AIzaSECRETSECRET123 auth=%s",
+            "Bearer tok_SECRET_456",
+        )
+        logging.getLogger("httpx").info("HTTP Request: GET ...&key=AIzaHIDDEN")
+        err = capsys.readouterr().err
+        assert "SECRET" not in err and "HIDDEN" not in err
+        assert "key=[REDACTED]" in err and "Bearer [REDACTED]" in err
+    finally:
+        logging.getLogger().handlers.clear()

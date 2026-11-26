@@ -19,6 +19,7 @@ from __future__ import annotations
 import contextvars
 import json
 import logging
+import re
 import sys
 import time
 import uuid
@@ -65,14 +66,32 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(out, ensure_ascii=False)
 
 
+_SECRET_IN_LOG = re.compile(r"((?:[?&](?:key|api_key|token|access_token)=)|(?:Bearer\s+))[^&\s\"']+", re.I)
+
+
+class RedactSecrets(logging.Filter):
+    """Mask API keys in URLs (YouTube takes ?key=) and bearer tokens in every log line."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        clean = _SECRET_IN_LOG.sub(r"\1[REDACTED]", msg)
+        if clean != msg:
+            record.msg, record.args = clean, None
+        return True
+
+
 def configure_logging(json_logs: bool = False, level: int = logging.INFO) -> None:
     handler = logging.StreamHandler(sys.stderr)  # stderr: stdout belongs to MCP stdio when used
     handler.setFormatter(
         JsonFormatter() if json_logs else logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
     )
+    handler.addFilter(RedactSecrets())
     root = logging.getLogger()
     root.handlers[:] = [handler]
     root.setLevel(level)
+    # httpx logs every request URL at INFO, and a YouTube URL carries the key: keep it to warnings.
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 # ---- traces and spans ------------------------------------------------------------
