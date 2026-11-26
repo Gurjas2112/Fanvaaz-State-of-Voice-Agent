@@ -3,10 +3,10 @@
   "appName": "Fanvaaz",
   "webDir": "www",
   "server": {
-    "url": "https://fanvaaz.example.invalid/app",
+    "url": "https://fanvaaz-426966977732.asia-south1.run.app/app",
     "cleartext": false,
     "allowNavigation": [
-      "fanvaaz.example.invalid"
+      "fanvaaz-426966977732.asia-south1.run.app"
     ]
   },
   "android": {

@@ -16,10 +16,10 @@ an MCP server) and a test harness that runs on **real YouTube data, not syntheti
 
 | | |
 | --- | --- |
-| **Live app** | Cloud Run (asia-south1) + Cloud SQL Postgres; deploy with one command, see [Deploy](#deploy-to-google-cloud). The URL goes here after the first deploy. |
-| **Android app** | Capacitor APK in [`app_screenshots_screen_recording/`](app_screenshots_screen_recording/) once built against the live URL ([how](#android-app-apk)) |
+| **Live app** | **https://fanvaaz-426966977732.asia-south1.run.app** (Cloud Run, asia-south1, Cloud SQL Postgres 16 + pgvector). Create an account at `/signup`; health at [`/ready`](https://fanvaaz-426966977732.asia-south1.run.app/ready) |
+| **Android app** | [`app_screenshots_screen_recording/fanvaaz.apk`](app_screenshots_screen_recording/fanvaaz.apk): release-signed Capacitor app that opens the live service ([how it is built](#android-app-apk)); also on the [Releases](https://github.com/Gurjas2112/Fanvaaz-State-of-Voice-Agent/releases) page |
 | **Walkthrough video** | [`app_screenshots_screen_recording/fanvaaz_walkthrough.mp4`](app_screenshots_screen_recording/fanvaaz_walkthrough.mp4) |
-| **Screenshots** | [`app_screenshots_screen_recording/web/`](app_screenshots_screen_recording/web/) (19 flows) and [`mobile/`](app_screenshots_screen_recording/mobile/) (5 flows) |
+| **Screenshots** | [`web/`](app_screenshots_screen_recording/web/) (19 flows), [`mobile/`](app_screenshots_screen_recording/mobile/) (5 phone-browser flows), [`android/`](app_screenshots_screen_recording/android/) (the APK on an Android 13 emulator) |
 | **AI system card** | [`docs/AI_SYSTEM_CARD.md`](docs/AI_SYSTEM_CARD.md) |
 | **Latest run report** | [`docs/RUN_REPORT.md`](docs/RUN_REPORT.md) (generated from a real collection) |
 
