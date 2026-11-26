@@ -9,8 +9,10 @@ brand the matcher did not find is dropped, and any failure keeps the rule labels
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from . import ai, prompts
 from . import profile as profile_mod
@@ -58,6 +60,7 @@ def llm_relabel(
     llm: LLM,
     batch_size: int = 25,
     only_uncertain: bool = False,
+    workers: int = 8,
 ) -> list[Mention]:
     """Replace rule sentiment with LLM sentiment where the LLM gives a valid answer."""
     by_src: dict[str, list[Mention]] = {}
@@ -65,13 +68,14 @@ def llm_relabel(
         by_src.setdefault(m.source_id + "|" + m.source, []).append(m)
     keys = [k for k, ms in by_src.items() if not only_uncertain or any(m.confidence < CONFIDENT for m in ms)]
     prompt = prompts.get("sentiment", category=profile_mod.active().category)
-    for i in range(0, len(keys), batch_size):
-        chunk = keys[i : i + batch_size]
+    chunks = [keys[i : i + batch_size] for i in range(0, len(keys), batch_size)]
+
+    def ask_batch(chunk: list[str]):
         payload = [
             {"id": k, "text": texts.get(k, "")[:600], "brands": sorted({m.brand for m in by_src[k]})}
             for k in chunk
         ]
-        res = ai.call(
+        return ai.call(
             llm,
             prompt,
             json.dumps({"items": payload}, ensure_ascii=False),
@@ -79,8 +83,18 @@ def llm_relabel(
             node="collect.relabel",
             schema=SentimentBatchOut,
         )
+
+    # A live run has 100+ batches at ~25 s each: one after another that outlasts Cloud Run's
+    # request timeout, so batches run in parallel. Each worker gets a copy of the context
+    # (run id, trace) so the cost ledger still attributes every call to this run; the budget
+    # check runs per call, so a breach can overshoot by at most `workers` calls.
+    workers = max(1, min(workers, len(chunks)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        results = list(pool.map(lambda c: contextvars.copy_context().run(ask_batch, c), chunks))
+
+    for n, (chunk, res) in enumerate(zip(chunks, results, strict=True)):
         if not res.ok or res.parsed is None:
-            log.warning("LLM sentiment batch %d kept rule labels (%s)", i // batch_size, res.outcome)
+            log.warning("LLM sentiment batch %d kept rule labels (%s)", n, res.outcome)
             continue
         items = {it.id: {lb.brand: lb.sentiment for lb in it.labels} for it in res.parsed.items}
         for k in chunk:

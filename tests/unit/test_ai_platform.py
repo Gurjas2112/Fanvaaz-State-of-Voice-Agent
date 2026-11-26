@@ -386,3 +386,57 @@ def test_provider_error_message_is_kept():
     llm = OpenAICompatLLM(s, client=httpx.Client(transport=httpx.MockTransport(handler)))
     with pytest.raises(httpx.HTTPStatusError, match="model not found"):
         llm.embed(["x"])
+
+
+def test_relabel_batches_run_in_parallel_and_apply_to_the_right_mentions():
+    import threading
+
+    from fanvaaz.extract import llm_relabel
+    from fanvaaz.models import Mention
+
+    threads = set()
+
+    class EchoLLM:
+        """Labels each item from its own id, so a mix-up between parallel batches shows."""
+
+        cacheable = False
+
+        def complete(self, system, user, *, json_mode=False):
+            threads.add(threading.get_ident())
+            items = json.loads(user[user.index("{") :])["items"]
+            return json.dumps(
+                {
+                    "items": [
+                        {
+                            "id": it["id"],
+                            "labels": [
+                                {
+                                    "brand": b,
+                                    "sentiment": "positive"
+                                    if int(it["id"].split("|")[0]) % 2
+                                    else "negative",
+                                }
+                                for b in it["brands"]
+                            ],
+                        }
+                        for it in items
+                    ]
+                }
+            )
+
+    mentions = [
+        Mention(
+            video_id="v",
+            keyword="k",
+            source="comment",
+            source_id=str(i),
+            brand="OnePlus",
+            sentiment="neutral",
+            confidence=0.0,
+        )
+        for i in range(120)
+    ]
+    texts = {f"{i}|comment": f"comment {i}" for i in range(120)}
+    out = llm_relabel(mentions, texts, EchoLLM(), batch_size=10, only_uncertain=True, workers=4)
+    assert all(m.sentiment == ("positive" if int(m.source_id) % 2 else "negative") for m in out)
+    assert len(threads) > 1
