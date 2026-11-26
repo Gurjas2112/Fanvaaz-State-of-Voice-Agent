@@ -141,14 +141,17 @@ echo "== 6. Daily live collection with Cloud Scheduler"
 TOKEN="$(gcloud secrets versions access latest --secret=fanvaaz-api-token)"
 JOB_ARGS=(--location="$REGION" --schedule="$DAILY_CRON" --time-zone=Asia/Kolkata
   --uri="$URL/api/v1/runs" --http-method=POST --attempt-deadline=1800s
-  --headers="Authorization=Bearer $TOKEN,Content-Type=application/json"
   --message-body='{"source":"youtube"}')
+HEADERS="Authorization=Bearer $TOKEN,Content-Type=application/json"
+# create takes --headers, update takes --update-headers; output is hidden so the token is never printed.
 if gcloud scheduler jobs describe fanvaaz-daily --location="$REGION" >/dev/null 2>&1; then
-  gcloud scheduler jobs update http fanvaaz-daily "${JOB_ARGS[@]}" >/dev/null
+  gcloud scheduler jobs update http fanvaaz-daily "${JOB_ARGS[@]}" --update-headers="$HEADERS" >/dev/null 2>&1 ||
+    { echo "  updating the scheduler job failed (run with bash -x to debug)" >&2; exit 1; }
 else
-  gcloud scheduler jobs create http fanvaaz-daily "${JOB_ARGS[@]}" >/dev/null
+  gcloud scheduler jobs create http fanvaaz-daily "${JOB_ARGS[@]}" --headers="$HEADERS" >/dev/null 2>&1 ||
+    { echo "  creating the scheduler job failed (run with bash -x to debug)" >&2; exit 1; }
 fi
-unset TOKEN
+unset TOKEN HEADERS
 
 echo "== 7. Alerts: failed runs (log-based metric) and a monthly budget"
 gcloud logging metrics describe fanvaaz-run-failed >/dev/null 2>&1 ||
