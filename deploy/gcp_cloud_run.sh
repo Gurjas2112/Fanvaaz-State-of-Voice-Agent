@@ -62,6 +62,10 @@ put_secret() {  # name, prompt, [env var holding the value]
   local name="$1" prompt="$2" value="${!3:-}"
   gcloud secrets describe "$name" >/dev/null 2>&1 || gcloud secrets create "$name" --replication-policy=automatic
   [[ -z "$value" ]] && { read -rsp "$prompt (Enter to keep the current value): " value; echo; }
+  if [[ "$name" == "fanvaaz-admin-password" && -n "$value" && ${#value} -lt 12 ]]; then
+    echo "  The admin password must be at least 12 characters (you typed ${#value}). Run the script again." >&2
+    exit 1
+  fi
   if [[ -n "$value" ]]; then
     printf '%s' "$value" | gcloud secrets versions add "$name" --data-file=- >/dev/null
   elif ! gcloud secrets versions list "$name" --filter=state=enabled --format='value(name)' | grep -q .; then
