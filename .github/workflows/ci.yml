@@ -137,7 +137,7 @@ jobs:
           arch: x86_64
           disable-animations: true
           script: |
-            nohup appium --allow-insecure chromedriver_autodownload > appium.log 2>&1 &
+            nohup appium --allow-insecure "*:chromedriver_autodownload" > appium.log 2>&1 &
             for i in $(seq 1 60); do curl -sf http://127.0.0.1:4723/status >/dev/null && break; sleep 2; done
             APPIUM_URL=http://127.0.0.1:4723 APP_URL=http://10.0.2.2:8000 pytest -m mobile -v
       - uses: actions/upload-artifact@v4
