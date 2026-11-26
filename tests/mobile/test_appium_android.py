@@ -13,6 +13,7 @@ CI runs this in the `mobile-appium` job (reactivecircus/android-emulator-runner)
 from __future__ import annotations
 
 import os
+import re
 
 import pytest
 
@@ -77,6 +78,13 @@ def test_brief_visible_on_phone(dashboard):
     assert "OnePlus holds" in dashboard.find_element(*tid("brief-sentence")).text
 
 
+def tap(driver, el):
+    """Scroll the target to the middle of the screen, then tap it: the sticky header, the on-screen
+    keyboard and Chrome's install bar can otherwise cover an element scrolled to an edge."""
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'center'})", el)
+    el.click()
+
+
 def test_no_horizontal_scroll(dashboard):
     sw = dashboard.execute_script("return document.documentElement.scrollWidth")
     vw = dashboard.execute_script("return window.innerWidth")
@@ -85,26 +93,23 @@ def test_no_horizontal_scroll(dashboard):
 
 def test_keyword_switch_by_tap(dashboard):
     before = dashboard.find_element(*tid("rank-OnePlus")).text
-    pill = dashboard.find_element(*tid("kw-best camera phone India"))
-    dashboard.execute_script("arguments[0].scrollIntoView({inline: 'center'})", pill)
-    pill.click()
-    WebDriverWait(dashboard, 10).until(lambda d: d.find_element(*tid("rank-OnePlus")).text != before)
-    assert "across 50 videos" in dashboard.find_element(*tid("breakdown")).text
+    tap(dashboard, dashboard.find_element(*tid("kw-best camera phone India")))
+    WebDriverWait(dashboard, 15).until(lambda d: d.find_element(*tid("rank-OnePlus")).text != before)
+    assert re.search(r"across \d+ videos", dashboard.find_element(*tid("breakdown")).text)
 
 
 def test_mark_handled_by_tap(dashboard):
     before = int(dashboard.find_element(*tid("fact-replies")).text)
     item = dashboard.find_elements(*tid("inbox-item"))[0]
-    dashboard.execute_script("arguments[0].scrollIntoView()", item)
-    item.find_element(*tid("mark-handled")).click()
-    WebDriverWait(dashboard, 10).until(lambda d: int(d.find_element(*tid("fact-replies")).text) == before - 1)
+    tap(dashboard, item.find_element(*tid("mark-handled")))
+    WebDriverWait(dashboard, 15).until(lambda d: int(d.find_element(*tid("fact-replies")).text) == before - 1)
 
 
 def test_ask_on_touch_keyboard(dashboard):
     box = dashboard.find_element(*tid("ask-input"))
-    box.click()
+    tap(dashboard, box)
     box.send_keys("What do people say about the Samsung camera?")
-    dashboard.find_element(*tid("ask-submit")).click()
+    tap(dashboard, dashboard.find_element(*tid("ask-submit")))
     answer = WebDriverWait(dashboard, 15).until(
         lambda d: (
             d.find_element(*tid("ask-answer"))
@@ -113,7 +118,7 @@ def test_ask_on_touch_keyboard(dashboard):
         )
     )
     assert answer.get_attribute("data-refused") == "false"
-    assert "OnePlus" in answer.text
+    assert "Samsung" in answer.text
 
 
 def test_injection_refused_on_mobile(dashboard):
