@@ -24,6 +24,7 @@ dependencies = [
   "psycopg[binary]>=3.2",
   "psycopg-pool>=3.2",
   "mcp>=1.20,<2",  # FastMCP API; mcp 2.x renamed it to MCPServer
+  "openpyxl>=3.1",  # Excel export
 ]
 
 [project.optional-dependencies]

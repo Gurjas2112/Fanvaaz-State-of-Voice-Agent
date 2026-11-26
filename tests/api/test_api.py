@@ -214,8 +214,33 @@ def test_risks_validation(client, params):
 def test_csv_exports(client, table, header):
     r = client.get(f"/api/v1/export/{table}.csv")
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/csv")
-    assert r.text.startswith(header) and "attachment" in r.headers["content-disposition"]
+    assert r.content.startswith(bytes([0xEF, 0xBB, 0xBF]))  # BOM: Excel reads Hindi and emoji correctly
+    assert r.text.lstrip(chr(0xFEFF)).startswith(header) and "attachment" in r.headers["content-disposition"]
     assert len(r.text.splitlines()) > 10
+
+
+def test_excel_workbook_export(client, anon):
+    import io
+
+    from openpyxl import load_workbook
+
+    r = client.get("/api/v1/export/report.xlsx")
+    assert r.status_code == 200 and "spreadsheetml" in r.headers["content-type"]
+    assert r.headers["content-disposition"].endswith('.xlsx"')
+    wb = load_workbook(io.BytesIO(r.content))
+    assert wb.sheetnames == ["Summary", "Share of voice", "Insights", "Reply inbox", "Mentions"]
+    sov = wb["Share of voice"]
+    assert [c.value for c in sov[1]][:4] == ["run_id", "keyword", "brand", "sov"]
+    assert isinstance(sov["D2"].value, float)  # numbers stay numbers
+    assert wb["Mentions"].max_row > 100
+    # no cell may become a formula, whatever a comment says
+    assert not any(
+        isinstance(c.value, str) and c.value.startswith("=")
+        for ws in wb
+        for row in ws.iter_rows()
+        for c in row
+    )
+    assert anon.get("/api/v1/export/report.xlsx").status_code == 401
 
 
 def test_unknown_export_is_422(client):

@@ -739,28 +739,25 @@ def _csv_safe(value) -> str:
     return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
 
 
+def _cell(value):
+    return _csv_safe("|".join(value) if isinstance(value, list) else value)
+
+
 def _csv(rows: list[dict], columns: list[str], filename: str) -> Response:
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(columns)
     for r in rows:
-        w.writerow([_csv_safe("|".join(r[c]) if isinstance(r.get(c), list) else r.get(c)) for c in columns])
+        w.writerow([_cell(r.get(c)) for c in columns])
     return Response(
-        content=buf.getvalue(),
+        # The UTF-8 byte-order mark makes Excel read Hindi and emoji correctly (it assumes ANSI otherwise).
+        content=chr(0xFEFF) + buf.getvalue(),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
-@app.get(
-    "/api/v1/export/{table}.csv", tags=["export"], responses={**NO_DATA, 200: {"content": {"text/csv": {}}}}
-)
-def export(
-    table: Literal["sov", "risks", "mentions"],
-    info: RunInfo = Depends(latest_or_404),
-    store: Store = Depends(get_store),
-) -> Response:
-    """Flat CSVs for Tableau / Power BI / Excel."""
+def _export_rows(table: str, info: RunInfo, store: Store) -> tuple[list[dict], list[str]]:
     if table == "sov":
         rows = [
             {"run_id": info.run_id, "keyword": k, **b.model_dump()}
@@ -810,7 +807,73 @@ def export(
     else:
         rows = [{"run_id": info.run_id, **m.model_dump()} for m in store.mentions(info.run_id)]
         cols = ["run_id", "keyword", "video_id", "source", "source_id", "brand", "sentiment", "aspects"]
+    return rows, cols
+
+
+@app.get(
+    "/api/v1/export/{table}.csv", tags=["export"], responses={**NO_DATA, 200: {"content": {"text/csv": {}}}}
+)
+def export(
+    table: Literal["sov", "risks", "mentions"],
+    info: RunInfo = Depends(latest_or_404),
+    store: Store = Depends(get_store),
+) -> Response:
+    """Flat CSVs for Tableau / Power BI / Excel (UTF-8 with BOM; formula injection neutralised)."""
+    rows, cols = _export_rows(table, info, store)
     return _csv(rows, cols, f"fanvaaz_{table}_{info.run_id}.csv")
+
+
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@app.get("/api/v1/export/report.xlsx", tags=["export"], responses={**NO_DATA, 200: {"content": {XLSX: {}}}})
+def export_xlsx(info: RunInfo = Depends(latest_or_404), store: Store = Depends(get_store)) -> Response:
+    """One Excel workbook: summary, share of voice, insights, reply inbox and every mention."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    summary = wb.active
+    summary.title = "Summary"
+    for k, v in [
+        ("Run", info.run_id),
+        ("Collected (UTC)", info.created_at),
+        ("Source", "YouTube (live)" if info.source == "youtube" else info.source),
+        ("Focus brand", info.focus_brand or ""),
+        ("Brands", ", ".join(info.brands or [])),
+        ("Search terms", ", ".join(info.keywords)),
+        ("Videos", info.videos),
+        ("Comments", info.comments),
+        ("YouTube API units", info.quota_units_used),
+    ]:
+        summary.append([k, v if isinstance(v, int) else _cell(v)])
+    insights = [
+        {"title": i.get("title", ""), "text": i.get("text", ""), "verified": i.get("verified", False)}
+        for i in store.insights(info.run_id)
+    ]
+    sheets = [("Share of voice", *_export_rows("sov", info, store))]
+    sheets.append(("Insights", insights, ["title", "text", "verified"]))
+    sheets.append(("Reply inbox", *_export_rows("risks", info, store)))
+    sheets.append(("Mentions", *_export_rows("mentions", info, store)))
+    for title, rows, cols in sheets:
+        ws = wb.create_sheet(title)
+        ws.append(cols)
+        for c in ws[1]:
+            c.font = Font(bold=True)
+        for r in rows:
+            # numbers stay numbers (sortable, chartable); text is neutralised against formula injection
+            ws.append([r.get(c) if isinstance(r.get(c), (int, float)) else _cell(r.get(c)) for c in cols])
+        ws.freeze_panes = "A2"
+        for i, c in enumerate(cols, 1):
+            ws.column_dimensions[get_column_letter(i)].width = min(max(len(c) + 2, 12), 60)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return Response(
+        content=buf.getvalue(),
+        media_type=XLSX,
+        headers={"Content-Disposition": f'attachment; filename="fanvaaz_report_{info.run_id}.xlsx"'},
+    )
 
 
 @app.post(
